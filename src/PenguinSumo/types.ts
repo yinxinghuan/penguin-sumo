@@ -29,6 +29,8 @@ export interface SumoPenguin {
   recoverT: number;               // seconds left in recover phase
   // AI scratchpad
   approachTargetIx: number;       // which other penguin we're chasing right now
+  // Audio cue flags
+  chargeFullCued: boolean;        // played the "fully charged" chime this cycle
   // Bookkeeping
   lastImpactFrom: string | null;  // id of the last penguin that hit us
   lastImpactAt: number;           // time of that hit (for KO_HISTORY_WINDOW)

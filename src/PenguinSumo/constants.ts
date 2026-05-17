@@ -13,14 +13,14 @@ export const PLAYER_WALK_SPEED = 6.5;    // baseline movement while not charging
 export const PLAYER_CHARGE_WALK = 3.0;   // movement speed while charging
 export const FRICTION = 5.0;             // velocity decay per second (idle)
 
-// Charge / burst
-export const CHARGE_TIME = 0.55;         // hold this long → fully charged
-export const CHARGE_MIN_THRESHOLD = 0.18; // below this, release does nothing
-export const BURST_MIN_SPEED = 11;       // burst speed at min charge
-export const BURST_MAX_SPEED = 22;       // burst speed at full charge
-export const BURST_DURATION = 0.30;      // committed high-speed window
+// Charge / burst — tightened from the v1 spec for snappier feel
+export const CHARGE_TIME = 0.40;         // hold this long → fully charged
+export const CHARGE_MIN_THRESHOLD = 0.15; // below this, release does nothing
+export const BURST_MIN_SPEED = 12;       // burst speed at min charge
+export const BURST_MAX_SPEED = 26;       // burst speed at full charge
+export const BURST_DURATION = 0.32;      // committed high-speed window
 export const DECAY_DURATION = 0.55;      // velocity decays over this window
-export const RECOVER_AFTER_BURST = 0.18; // brief input lock after a burst
+export const RECOVER_AFTER_BURST = 0.15; // brief input lock after a burst
 
 // Collision
 export const COLLISION_ELASTICITY = 0.92; // 1.0 = elastic, lower = less bounce
@@ -82,9 +82,9 @@ export const AI_SPECS: AiSpec[] = [
   },
 ];
 
-// Camera — pull up a bit higher than PR so the whole arena fits in view at
-// once, plus a touch of follow.
-export const CAMERA_POS: [number, number, number] = [0, 26, 11];
+// Camera — closer pull-in so the wrestlers read at chunky scale. Whole arena
+// still fits because of the wide aspect on mobile portrait viewports.
+export const CAMERA_POS: [number, number, number] = [0, 20, 8.5];
 export const CAMERA_FOV = 50;
 
 // Grace period before any KO event is counted (workspace CLAUDE.md rule).

@@ -55,6 +55,7 @@ function spawnInitial(d: GameRef) {
     burstT: 0,
     recoverT: 0,
     approachTargetIx: -1,
+    chargeFullCued: false,
     lastImpactFrom: null,
     lastImpactAt: -99,
     fellOutAt: -1,
@@ -79,6 +80,7 @@ function spawnInitial(d: GameRef) {
       burstT: 0,
       recoverT: 0,
       approachTargetIx: -1,
+      chargeFullCued: false,
       lastImpactFrom: null,
       lastImpactAt: -99,
       fellOutAt: -1,
@@ -138,10 +140,18 @@ export function useGameLoop(p: GameLoopParams) {
           // Aim
           player.rotation = Math.atan2(p.stick.x, p.stick.y);
           // Build charge
+          const prevCharge = player.charge;
           player.charge = Math.min(1, player.charge + c / CHARGE_TIME);
           if (player.state === 'idle') {
             player.state = 'charging';
+            player.chargeFullCued = false;
             p.playSfx('charge');
+          }
+          // Fully-charged chime + haptic — fires once when charge crosses 1.0
+          if (player.charge >= 1 && prevCharge < 1 && !player.chargeFullCued) {
+            player.chargeFullCued = true;
+            p.playSfx('tick');
+            p.haptic?.('light');
           }
           // Slow walk while charging
           const walkSpeed = PLAYER_CHARGE_WALK * (1 - player.charge * 0.35);
@@ -165,6 +175,7 @@ export function useGameLoop(p: GameLoopParams) {
             player.state = 'idle';
           }
           player.charge = 0;
+          player.chargeFullCued = false;
           p.onCharge(0);
         }
       } else if (player.state === 'bursting') {
