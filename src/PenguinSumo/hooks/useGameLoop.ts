@@ -153,6 +153,9 @@ function emitSweatIfNeeded(d: GameRef, peng: SumoPenguin) {
 export interface GameLoopParams {
   state: React.MutableRefObject<GameRef>;
   playing: boolean;
+  // True during the "READY" frame at round start — physics still integrates so
+  // any spawn drift settles, but player input and AI state machines are frozen.
+  introLock: boolean;
   stick: Stick;
   onScore: (s: number) => void;
   onTime: (timeLeft: number) => void;
@@ -187,7 +190,11 @@ export function useGameLoop(p: GameLoopParams) {
     }
     const c = wallC * d.timeScale;
     d.time += c;
-    d.timeLeft = Math.max(0, d.timeLeft - c);
+    // Countdown clock pauses during the READY lock so the round still feels
+    // like a full 60s after the ritual.
+    if (!p.introLock) {
+      d.timeLeft = Math.max(0, d.timeLeft - c);
+    }
     p.onTime(d.timeLeft);
 
     const player = d.penguins.find(p => p.isPlayer);
@@ -196,7 +203,7 @@ export function useGameLoop(p: GameLoopParams) {
     // -----------------------------------------------------------------------
     // PLAYER INPUT — charging while stick is held; burst on release.
     // -----------------------------------------------------------------------
-    if (player.state !== 'falling' && player.state !== 'gone') {
+    if (!p.introLock && player.state !== 'falling' && player.state !== 'gone') {
       const stickMag = Math.hypot(p.stick.x, p.stick.y);
       const stickActive = p.stick.active && stickMag > 0.18;
 
@@ -269,12 +276,14 @@ export function useGameLoop(p: GameLoopParams) {
     // -----------------------------------------------------------------------
     // AI — for each non-player penguin, run a short state machine.
     // -----------------------------------------------------------------------
-    for (const peng of d.penguins) {
+    if (!p.introLock) for (const peng of d.penguins) {
       if (peng.isPlayer) continue;
       if (peng.state === 'falling' || peng.state === 'gone') continue;
       const spec = AI_SPECS[peng.aiIx];
-      // Pick a target each tick — nearest non-fallen penguin that isn't us
-      let bestDist = Infinity;
+      // Pick a target each tick. Distance is weighted lower (×0.75) when the
+      // candidate is the player, so each AI biases slightly toward ganging up
+      // on the human instead of just beating each other up.
+      let bestScore = Infinity;
       let target: SumoPenguin | null = null;
       for (const other of d.penguins) {
         if (other === peng) continue;
@@ -282,7 +291,8 @@ export function useGameLoop(p: GameLoopParams) {
         const dx = other.position.x - peng.position.x;
         const dz = other.position.z - peng.position.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist < bestDist) { bestDist = dist; target = other; }
+        const score = other.isPlayer ? dist * 0.75 : dist;
+        if (score < bestScore) { bestScore = score; target = other; }
       }
       if (!target) continue;
 

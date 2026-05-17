@@ -10,6 +10,7 @@ import type { Stick } from '../types';
 interface SceneProps {
   state: React.MutableRefObject<GameRef>;
   playing: boolean;
+  introLock: boolean;
   stickRef: React.MutableRefObject<Stick>;
   onScore: (s: number) => void;
   onTime: (t: number) => void;
@@ -811,10 +812,10 @@ function AiRings({ state }: { state: React.MutableRefObject<GameRef> }) {
 }
 
 export function Scene(props: SceneProps) {
-  const { state, playing, stickRef } = props;
+  const { state, playing, introLock, stickRef } = props;
 
   useGameLoop({
-    state, playing, stick: stickRef.current,
+    state, playing, introLock, stick: stickRef.current,
     onScore: props.onScore,
     onTime: props.onTime,
     onKo: props.onKo,

@@ -30,6 +30,10 @@ export function PenguinSumo() {
   const [hits, setHits] = useState<{ key: number; label: string; big: boolean; ts: number }[]>([]);
   const [flashKey, setFlashKey] = useState(0);
   const [flashBig, setFlashBig] = useState(false);
+  // Round-start ritual. 'ready' freezes input/AI for ~1s while the overlay reads;
+  // 'go' fires once input unlocks for a brief punch frame, then null.
+  const [intro, setIntro] = useState<'ready' | 'go' | null>(null);
+  const introTimers = useRef<number[]>([]);
   // The joystick visual + SVG slingline are intentionally absent now; all
   // charge feedback lives on the in-world ChargeArrow attached to the player.
 
@@ -94,9 +98,18 @@ export function PenguinSumo() {
     setWon(false);
     setPhase('playing');
     startBgm(0.07);
+    // Round-start ritual: 1s "READY" lock, then a 0.4s "GO!" flash.
+    introTimers.current.forEach(id => clearTimeout(id));
+    introTimers.current = [];
+    setIntro('ready');
+    introTimers.current.push(window.setTimeout(() => setIntro('go'), 1000));
+    introTimers.current.push(window.setTimeout(() => setIntro(null), 1400));
   }, []);
 
-  useEffect(() => () => { stopBgm(); }, []);
+  useEffect(() => () => {
+    stopBgm();
+    introTimers.current.forEach(id => clearTimeout(id));
+  }, []);
 
   const showCanvas = phase !== 'splash';
   const canvasFrameloop = phase === 'playing' ? 'always' : 'demand';
@@ -109,6 +122,7 @@ export function PenguinSumo() {
             <Scene
               state={stateRef}
               playing={phase === 'playing'}
+              introLock={intro === 'ready'}
               stickRef={stickRef}
               onScore={onScore}
               onTime={onTime}
@@ -153,6 +167,13 @@ export function PenguinSumo() {
           room without a floating ring marker. All slingshot feedback lives
           on the in-world ChargeArrow (forward red arrow + backward stretch
           tail) attached to the player character. */}
+
+      {/* Round-start ritual */}
+      {showCanvas && intro && (
+        <div key={intro} className={`ps__intro ps__intro--${intro}`}>
+          {intro === 'ready' ? 'READY' : 'GO!'}
+        </div>
+      )}
 
       {/* Impact feedback overlays — screen-tinted flash + floating text */}
       {showCanvas && hits.map(h => (
