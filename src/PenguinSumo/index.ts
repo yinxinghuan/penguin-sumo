@@ -1,0 +1,1 @@
+export { PenguinSumo } from './PenguinSumo';
