@@ -8,22 +8,27 @@ export const RING_OUT_RADIUS = 16;       // distance from origin → ringed out
 export const PLAYFIELD = ARENA_RADIUS * 2; // legacy alias the engine reads
 
 // Player
-export const PLAYER_RADIUS = 0.75;       // body collision radius
-export const PLAYER_WALK_SPEED = 6.5;    // baseline movement while not charging
-export const PLAYER_CHARGE_WALK = 3.0;   // movement speed while charging
+export const PLAYER_RADIUS = 1.05;       // body collision radius (matched to
+                                         // ~1.4× wrestler mesh scale below)
+export const PLAYER_WALK_SPEED = 7.5;    // baseline movement while not charging
+export const PLAYER_CHARGE_WALK = 3.4;   // movement speed while charging
 export const FRICTION = 5.0;             // velocity decay per second (idle)
+export const WRESTLER_VISUAL_SCALE = 1.4; // scale prop fed into mesh components
 
-// Charge / burst — tightened from the v1 spec for snappier feel
-export const CHARGE_TIME = 0.40;         // hold this long → fully charged
+// Charge / burst — heavier punch since wrestlers are bigger and the user
+// expects a meaty hit when releasing the slingshot.
+export const CHARGE_TIME = 0.42;          // hold this long → fully charged
 export const CHARGE_MIN_THRESHOLD = 0.15; // below this, release does nothing
-export const BURST_MIN_SPEED = 12;       // burst speed at min charge
-export const BURST_MAX_SPEED = 26;       // burst speed at full charge
-export const BURST_DURATION = 0.32;      // committed high-speed window
-export const DECAY_DURATION = 0.55;      // velocity decays over this window
-export const RECOVER_AFTER_BURST = 0.15; // brief input lock after a burst
+export const BURST_MIN_SPEED = 15;        // burst speed at min charge
+export const BURST_MAX_SPEED = 34;        // burst speed at full charge
+export const BURST_DURATION = 0.34;       // committed high-speed window
+export const DECAY_DURATION = 0.60;       // velocity decays over this window
+export const RECOVER_AFTER_BURST = 0.16;  // brief input lock after a burst
 
-// Collision
-export const COLLISION_ELASTICITY = 0.92; // 1.0 = elastic, lower = less bounce
+// Collision — cartoon over-elastic: bounce HARDER than realistic so a clean
+// dash sends the opponent flying. Values >1.0 add energy to the exchange,
+// which is exactly the comic "WHAM" we want.
+export const COLLISION_ELASTICITY = 1.22;
 export const IMPACT_BONK_MIN_SPEED = 4;   // below this, no SFX/screen-flash
 export const KO_HISTORY_WINDOW = 2.5;     // last hitter only counts within this many seconds
 

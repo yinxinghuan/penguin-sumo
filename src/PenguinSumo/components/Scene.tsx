@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { CAMERA_FOV, CAMERA_POS, ARENA_RADIUS, RING_OUT_RADIUS } from '../constants';
+import { CAMERA_FOV, CAMERA_POS, ARENA_RADIUS, RING_OUT_RADIUS, WRESTLER_VISUAL_SCALE } from '../constants';
 import { Penguin } from './Penguin';
 import { SheepWrestler, WolfWrestler, SheepdogWrestler } from './Wrestlers';
 import { useGameLoop, GameRef, SfxKey } from '../hooks/useGameLoop';
@@ -163,6 +163,7 @@ function ActorSync({ state }: { state: React.MutableRefObject<GameRef> }) {
               bodyColor={peng.bodyColor}
               beltColor={peng.beltColor}
               isPlayer={peng.isPlayer}
+              scale={WRESTLER_VISUAL_SCALE}
             />
           </group>
         );
@@ -229,17 +230,20 @@ function PlayerScreenTracker({ state, onPos }: { state: React.MutableRefObject<G
 function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
   const shaftRef = useRef<THREE.Mesh>(null);
   const tipRef = useRef<THREE.Mesh>(null);
+  const tailRef = useRef<THREE.Mesh>(null);
   const shaftMat = useRef<THREE.MeshBasicMaterial>(null);
   const tipMat = useRef<THREE.MeshBasicMaterial>(null);
+  const tailMat = useRef<THREE.MeshBasicMaterial>(null);
 
   useFrame(() => {
     const d = state.current;
     const player = d.penguins.find(p => p.isPlayer);
-    if (!shaftRef.current || !tipRef.current || !shaftMat.current || !tipMat.current || !player) return;
+    if (!shaftRef.current || !tipRef.current || !tailRef.current || !shaftMat.current || !tipMat.current || !tailMat.current || !player) return;
 
     const charging = player.state === 'charging' && player.charge > 0.05;
     shaftRef.current.visible = charging;
     tipRef.current.visible = charging;
+    tailRef.current.visible = charging;
     if (!charging) return;
 
     const charge = player.charge;
@@ -269,6 +273,20 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
     const baseOp = 0.7 + charge * 0.3;
     shaftMat.current.opacity = baseOp;
     tipMat.current.opacity = Math.min(1, baseOp + 0.15);
+
+    // Backward stretch tail — visualizes the slingshot's pulled elastic now
+    // that the joystick UI is gone. Same red language as the forward arrow,
+    // narrower so it reads as the "band" rather than another arrow. Pulls
+    // back from the wrestler by length × charge.
+    const tailLen = 0.7 + charge * 2.6;
+    tailRef.current.position.set(
+      player.position.x - fx * tailLen * 0.5,
+      0.041,
+      player.position.z - fz * tailLen * 0.5,
+    );
+    tailRef.current.rotation.set(-Math.PI / 2, 0, player.rotation); // forward yaw - π
+    tailRef.current.scale.set(0.20 + charge * 0.08, tailLen, 1);
+    tailMat.current.opacity = 0.45 + charge * 0.35;
   });
 
   return (
@@ -291,6 +309,18 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
           color="#ff4a5a"
           transparent
           opacity={0.95}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      {/* backward stretch tail */}
+      <mesh ref={tailRef}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          ref={tailMat}
+          color="#ff2a3a"
+          transparent
+          opacity={0.55}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
@@ -320,7 +350,7 @@ function PlayerRing({ state }: { state: React.MutableRefObject<GameRef> }) {
   });
   return (
     <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[0.45, 0.62, 28]} />
+      <ringGeometry args={[0.7, 0.95, 28]} />
       <meshBasicMaterial color="#38e6ff" transparent opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending} />
     </mesh>
   );
@@ -706,6 +736,7 @@ function AiRings({ state }: { state: React.MutableRefObject<GameRef> }) {
       if (!m) continue;
       m.position.set(peng.position.x, 0.035, peng.position.z);
       m.visible = peng.state !== 'gone' && peng.state !== 'falling';
+      // (size of AI rings is set on geometry args below; no per-frame scale.)
       const mat = m.material as THREE.MeshBasicMaterial;
       const charging = peng.state === 'charging' && peng.charge > 0.5;
       const targetOpacity = charging
@@ -726,7 +757,7 @@ function AiRings({ state }: { state: React.MutableRefObject<GameRef> }) {
           }}
           rotation={[-Math.PI / 2, 0, 0]}
         >
-          <ringGeometry args={[0.50, 0.68, 28]} />
+          <ringGeometry args={[0.78, 1.02, 28]} />
           <meshBasicMaterial color="#d8453e" transparent opacity={0.30} depthWrite={false} blending={THREE.AdditiveBlending} />
         </mesh>
       ))}
