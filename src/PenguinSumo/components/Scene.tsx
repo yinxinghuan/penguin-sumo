@@ -234,13 +234,14 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
   const shaftMat = useRef<THREE.MeshBasicMaterial>(null);
   const tipMat = useRef<THREE.MeshBasicMaterial>(null);
   const tailMat = useRef<THREE.MeshBasicMaterial>(null);
-  // Color lerp scratch — warm-yellow (low charge) → orange → hot red (full).
-  // Power feedback visualized through the arrow's hue.
+  // Color lerp scratch — stoplight gradient (green → yellow → red) so the
+  // power level reads instantly. Previous yellow→orange→red was three
+  // warm hues that bled together at the speed the meter fills.
   const lerpColor = useMemo(() => new THREE.Color(), []);
   const tipColor = useMemo(() => new THREE.Color(), []);
-  const cWeak = useMemo(() => new THREE.Color('#ffc740'), []);
-  const cMid  = useMemo(() => new THREE.Color('#ff7a3a'), []);
-  const cHot  = useMemo(() => new THREE.Color('#ff2030'), []);
+  const cWeak = useMemo(() => new THREE.Color('#4aff80'), []); // chill green
+  const cMid  = useMemo(() => new THREE.Color('#ffd040'), []); // warning yellow
+  const cHot  = useMemo(() => new THREE.Color('#ff2030'), []); // danger red
 
   useFrame(() => {
     const d = state.current;
@@ -310,7 +311,7 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
           ref={shaftMat}
-          color="#ff2a3a"
+          color="#4aff80"
           transparent
           opacity={0.85}
           depthWrite={false}
@@ -321,7 +322,7 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
         <shapeGeometry args={[arrowTipShape()]} />
         <meshBasicMaterial
           ref={tipMat}
-          color="#ff4a5a"
+          color="#4aff80"
           transparent
           opacity={0.95}
           depthWrite={false}
@@ -333,7 +334,7 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
           ref={tailMat}
-          color="#ff2a3a"
+          color="#4aff80"
           transparent
           opacity={0.55}
           depthWrite={false}
