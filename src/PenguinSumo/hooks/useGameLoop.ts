@@ -139,8 +139,13 @@ export function useGameLoop(p: GameLoopParams) {
 
       if (player.state === 'idle' || player.state === 'charging') {
         if (stickActive) {
+          // Slingshot input: drag BACKWARD to aim forward. Negate stick →
+          // aim direction so the user's finger sits behind the character
+          // (away from the dash target), keeping the dash path visible.
+          const aimX = -p.stick.x;
+          const aimY = -p.stick.y;
           // Aim
-          player.rotation = Math.atan2(p.stick.x, p.stick.y);
+          player.rotation = Math.atan2(aimX, aimY);
           // Build charge
           const prevCharge = player.charge;
           player.charge = Math.min(1, player.charge + c / CHARGE_TIME);
@@ -155,12 +160,12 @@ export function useGameLoop(p: GameLoopParams) {
             p.playSfx('tick');
             p.haptic?.('light');
           }
-          // Slow walk while charging
+          // Slow walk in the AIM direction while pulling back
           const walkSpeed = PLAYER_CHARGE_WALK * (1 - player.charge * 0.35);
           player.velocity.set(
-            (p.stick.x / Math.max(stickMag, 0.01)) * walkSpeed,
+            (aimX / Math.max(stickMag, 0.01)) * walkSpeed,
             0,
-            (p.stick.y / Math.max(stickMag, 0.01)) * walkSpeed,
+            (aimY / Math.max(stickMag, 0.01)) * walkSpeed,
           );
           p.onCharge(player.charge);
         } else {
