@@ -43,10 +43,11 @@ export interface SumoPenguin {
   beltColor: string;              // mawashi belt color
 }
 
-// Floating effect (bonk burst, KO splash, charge flash)
+// Floating effect (bonk burst, KO splash, charge flash, ripple/bubble after
+// a ring-out water hit)
 export interface FxEvent {
   key: number;
-  type: 'bonk' | 'splash' | 'ko' | 'charge';
+  type: 'bonk' | 'splash' | 'ripple' | 'bubble' | 'ko' | 'charge';
   x: number;
   z: number;
   born: number;

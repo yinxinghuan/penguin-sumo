@@ -2,7 +2,7 @@
 // game-loop dispatches its own SfxKey set: charge / burst / bonk / ko / tick /
 // cheer / win / fail.
 
-type SfxKey = 'charge' | 'burst' | 'bonk' | 'ko' | 'tick' | 'cheer' | 'win' | 'fail';
+type SfxKey = 'charge' | 'burst' | 'bonk' | 'ko' | 'yelp' | 'tick' | 'cheer' | 'win' | 'fail';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -108,6 +108,17 @@ export function playSfx(key: SfxKey) {
       tone(800, 'sawtooth', 0.30, 0.20, t, 120);
       noise(0.35, 0.30, t, 1800);
       tone(70, 'sine', 0.40, 0.30, t + 0.04, 40);
+      break;
+    case 'yelp':
+      // "AYE!" cartoon yelp — fast rise then dip, slight pitch jitter so
+      // consecutive yelps in a multi-KO don't sound identical
+      {
+        const base = 480 + Math.random() * 160;
+        tone(base, 'square', 0.05, 0.16, t, base * 1.9);
+        tone(base * 1.9, 'square', 0.12, 0.14, t + 0.05, base * 0.85);
+        // a small breath/raspy tail
+        noise(0.10, 0.06, t + 0.05, 2400);
+      }
       break;
     case 'tick':
       tone(2200, 'square', 0.04, 0.10, t, 2200);

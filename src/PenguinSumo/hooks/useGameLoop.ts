@@ -11,7 +11,7 @@ import {
 } from '../constants';
 import type { SumoPenguin, FxEvent, Stick } from '../types';
 
-export type SfxKey = 'charge' | 'burst' | 'bonk' | 'ko' | 'tick' | 'cheer' | 'win' | 'fail';
+export type SfxKey = 'charge' | 'burst' | 'bonk' | 'ko' | 'yelp' | 'tick' | 'cheer' | 'win' | 'fail';
 
 export interface GameRef {
   penguins: SumoPenguin[];
@@ -312,14 +312,29 @@ export function useGameLoop(p: GameLoopParams) {
         peng.position.z += peng.velocity.z * c;
         peng.fallVy -= 24 * c; // strong gravity
         peng.position.y += peng.fallVy * c;
-        // Tumble — rotate around an axis perpendicular to the outward drift.
-        // Fast spin sells the "knocked clean off" cartoon feel.
         peng.tumbleRoll += c * 12;
-        // When they punch through the water surface (y ≈ -0.3) we emit a
-        // big splash burst exactly once.
-        if (peng.position.y < -0.2 && (peng as any).splashed !== true) {
-          (peng as any).splashed = true;
+        // Splash sequence — fired in stages so the water hit settles cinematically:
+        //   1) initial big splash at impact
+        //   2) secondary slow ripple ~0.5s later
+        //   3) up to 4 rising bubbles spaced through 1.5s
+        const anyP = peng as any;
+        if (peng.position.y < -0.2 && anyP.splashedAt === undefined) {
+          anyP.splashedAt = d.time;
           emitFx(d, 'splash', peng.position.x, peng.position.z);
+        }
+        if (anyP.splashedAt !== undefined) {
+          const elapsed = d.time - anyP.splashedAt;
+          if (!anyP.rippleEmitted && elapsed > 0.45) {
+            anyP.rippleEmitted = true;
+            emitFx(d, 'ripple', peng.position.x, peng.position.z);
+          }
+          const bubblesEmitted = (anyP.bubblesEmitted ?? 0) as number;
+          if (bubblesEmitted < 4 && elapsed > 0.25 + bubblesEmitted * 0.35) {
+            const jx = peng.position.x + (Math.random() - 0.5) * 1.1;
+            const jz = peng.position.z + (Math.random() - 0.5) * 1.1;
+            emitFx(d, 'bubble', jx, jz);
+            anyP.bubblesEmitted = bubblesEmitted + 1;
+          }
         }
         if (peng.position.y < -4.5) {
           peng.state = 'gone';
@@ -434,6 +449,7 @@ export function useGameLoop(p: GameLoopParams) {
           // big KO ring overlay there so the moment reads as explosive.
           emitFx(d, 'ko', peng.position.x, peng.position.z);
           p.playSfx('ko');
+          p.playSfx('yelp');
           // KO is always a big-hit moment — hit-stop + impact ping
           d.timeScale = 0.22;
           d.timeScaleHold = 0.22;

@@ -412,7 +412,7 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
     // Detect new fx → trigger React render to mount new meshes
     let changed = false;
     for (const fx of d.fx) {
-      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash') continue;
+      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash' && fx.type !== 'ripple' && fx.type !== 'bubble') continue;
       if (!lastSeen.current.has(fx.key)) {
         lastSeen.current.add(fx.key);
         changed = true;
@@ -430,22 +430,46 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
     if (changed) force(x => x + 1);
     // Animate live ones
     for (const fx of d.fx) {
-      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash') continue;
+      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash' && fx.type !== 'ripple' && fx.type !== 'bubble') continue;
       const r = refs.current.get(fx.key);
       if (!r) continue;
       const age = d.time - fx.born;
-      const dur = fx.type === 'splash' ? 1.4 : fx.type === 'ko' ? 1.0 : 0.45;
+      const dur =
+        fx.type === 'ripple' ? 2.5 :
+        fx.type === 'bubble' ? 1.8 :
+        fx.type === 'splash' ? 1.4 :
+        fx.type === 'ko'     ? 1.0 :
+                                0.45;
       const t = Math.min(1, age / dur);
       if (r.ring && r.ringMat) {
-        const maxScale = fx.type === 'splash' ? 4.5 : fx.type === 'ko' ? 3.5 : 2.4;
+        const maxScale =
+          fx.type === 'ripple' ? 7.5 :
+          fx.type === 'splash' ? 4.5 :
+          fx.type === 'ko'     ? 3.5 :
+                                  2.4;
         const s = 0.25 + t * maxScale;
         r.ring.scale.set(s, 1, s);
-        r.ringMat.opacity = (1 - t) * 0.85;
+        const peakOp =
+          fx.type === 'ripple' ? 0.45 :
+          fx.type === 'bubble' ? 0    : // bubble doesn't use the ring slot
+                                  0.85;
+        r.ringMat.opacity = (1 - t) * peakOp;
       }
       if (r.flash && r.flashMat) {
-        const s = 1 - t * 0.6;
-        r.flash.scale.set(s, s, s);
-        r.flashMat.opacity = (1 - t) * 0.5;
+        if (fx.type === 'bubble') {
+          // Bubble: rise from -0.3 to +0.5 and shrink slightly
+          const s = 0.85 - t * 0.25;
+          r.flash.scale.set(s, s, s);
+          r.flash.position.y = -0.25 + t * 0.9;
+          // Lateral wobble
+          r.flash.position.x = Math.sin(t * Math.PI * 3) * 0.10;
+          r.flashMat.opacity = (1 - t) * 0.75;
+        } else {
+          const s = 1 - t * 0.6;
+          r.flash.scale.set(s, s, s);
+          const peakOp = fx.type === 'ripple' ? 0 : 0.5;
+          r.flashMat.opacity = (1 - t) * peakOp;
+        }
       }
     }
   });
@@ -454,18 +478,64 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
   return (
     <>
       {d.fx
-        .filter(f => f.type === 'bonk' || f.type === 'ko' || f.type === 'splash')
+        .filter(f => f.type === 'bonk' || f.type === 'ko' || f.type === 'splash' || f.type === 'ripple' || f.type === 'bubble')
         .map(fx => {
           const ensure = (key: number) => {
             if (!refs.current.has(key)) refs.current.set(key, { ring: null, ringMat: null, flash: null, flashMat: null });
             return refs.current.get(key)!;
           };
           // Color & spoke count per fx type
-          const ringColor = fx.type === 'ko' ? '#38e6ff' : fx.type === 'splash' ? '#9fc8e8' : '#ffd84a';
-          const flashColor = fx.type === 'ko' ? '#cfe0f0' : fx.type === 'splash' ? '#cfe6f5' : '#fff5dd';
-          const spokes = fx.type === 'splash' ? 10 : 6;
-          // Y-position: bonk/ko slightly above floor, splash AT water level
-          const baseY = fx.type === 'splash' ? -0.08 : 0.07;
+          const ringColor =
+            fx.type === 'ko'     ? '#38e6ff' :
+            fx.type === 'splash' ? '#9fc8e8' :
+            fx.type === 'ripple' ? '#b9d8ee' :
+            fx.type === 'bubble' ? '#cfe6f5' :
+                                    '#ffd84a';
+          const flashColor =
+            fx.type === 'ko'     ? '#cfe0f0' :
+            fx.type === 'splash' ? '#cfe6f5' :
+            fx.type === 'bubble' ? '#dff0fa' :
+                                    '#fff5dd';
+          const spokes =
+            fx.type === 'splash' ? 10 :
+            fx.type === 'ripple' ? 0  :  // no spokes — just the slow ring
+            fx.type === 'bubble' ? 0  :
+                                    6;
+          // Y-position: bonk/ko above floor, splash/ripple at water level,
+          // bubble starts just below the surface and rises (handled in tick)
+          const baseY =
+            fx.type === 'splash' ? -0.08 :
+            fx.type === 'ripple' ? -0.10 :
+            fx.type === 'bubble' ? -0.25 :
+                                    0.07;
+          // Bubble: skip the ring entirely, just a rising sphere
+          if (fx.type === 'bubble') {
+            return (
+              <group key={fx.key} position={[fx.x, baseY, fx.z]}>
+                <mesh
+                  ref={el => { const r = ensure(fx.key); r.flash = el; r.flashMat = el ? (el.material as THREE.MeshBasicMaterial) : null; }}
+                >
+                  <sphereGeometry args={[0.16, 12, 8]} />
+                  <meshBasicMaterial color={flashColor} transparent opacity={0.75} depthWrite={false} blending={THREE.AdditiveBlending} />
+                </mesh>
+              </group>
+            );
+          }
+          // Ripple: a single big ring fading out, no flash, no spokes
+          if (fx.type === 'ripple') {
+            return (
+              <group key={fx.key} position={[fx.x, baseY, fx.z]}>
+                <mesh
+                  rotation={[-Math.PI / 2, 0, 0]}
+                  ref={el => { const r = ensure(fx.key); r.ring = el; r.ringMat = el ? (el.material as THREE.MeshBasicMaterial) : null; }}
+                >
+                  <ringGeometry args={[0.55, 0.78, 48]} />
+                  <meshBasicMaterial color={ringColor} transparent opacity={0.45} depthWrite={false} blending={THREE.AdditiveBlending} />
+                </mesh>
+              </group>
+            );
+          }
+          // bonk / ko / splash — ring + flash + spokes
           return (
             <group key={fx.key} position={[fx.x, baseY, fx.z]}>
               <mesh
@@ -481,8 +551,6 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
                 <sphereGeometry args={[fx.type === 'splash' ? 0.85 : 0.65, 14, 10]} />
                 <meshBasicMaterial color={flashColor} transparent opacity={0.6} depthWrite={false} blending={THREE.AdditiveBlending} />
               </mesh>
-              {/* radial spokes — for splash these read as droplets arcing
-                  outward from the impact point */}
               {Array.from({ length: spokes }).map((_, i) => {
                 const a = (i / spokes) * Math.PI * 2;
                 const stretch = fx.type === 'splash' ? 1.6 : 1.2;
@@ -502,6 +570,51 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
             </group>
           );
         })}
+    </>
+  );
+}
+
+// Stun stars rotating above any wrestler currently falling. Three small
+// yellow spheres orbit the wrestler's head + a wobbly spin, cartoon-style.
+function StunStars({ state }: { state: React.MutableRefObject<GameRef> }) {
+  const groupRefs = useRef<Map<string, THREE.Group>>(new Map());
+  useFrame(({ clock }) => {
+    const d = state.current;
+    const t = clock.getElapsedTime();
+    for (const peng of d.penguins) {
+      const g = groupRefs.current.get(peng.id);
+      if (!g) continue;
+      const visible = peng.state === 'falling';
+      g.visible = visible;
+      if (!visible) continue;
+      // Park stars above the wrestler's head, follow horizontally as they
+      // drift outward but slightly trail vertically for a "stunned" look
+      g.position.set(peng.position.x, Math.max(peng.position.y, -0.5) + 1.7, peng.position.z);
+      g.rotation.y = t * 5;
+    }
+  });
+  const d = state.current;
+  return (
+    <>
+      {d.penguins.map(peng => (
+        <group
+          key={`stun_${peng.id}`}
+          ref={el => {
+            if (el) groupRefs.current.set(peng.id, el);
+            else groupRefs.current.delete(peng.id);
+          }}
+        >
+          {[0, 1, 2].map(i => {
+            const a = (i / 3) * Math.PI * 2;
+            return (
+              <mesh key={i} position={[Math.cos(a) * 0.5, Math.sin(a) * 0.12, Math.sin(a) * 0.5]}>
+                <sphereGeometry args={[0.10, 8, 8]} />
+                <meshStandardMaterial color="#ffd84a" emissive="#ffd84a" emissiveIntensity={1.4} />
+              </mesh>
+            );
+          })}
+        </group>
+      ))}
     </>
   );
 }
@@ -698,6 +811,7 @@ export function Scene(props: SceneProps) {
 
       <ActorSync state={state} />
 
+      <StunStars state={state} />
       <ImpactBursts state={state} />
       <PlayerScreenTracker state={state} onPos={props.onPlayerScreen} />
     </>
