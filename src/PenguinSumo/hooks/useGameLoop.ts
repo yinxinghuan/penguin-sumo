@@ -47,12 +47,24 @@ export function createGameState(): GameRef {
 }
 
 function spawnInitial(d: GameRef) {
-  // Player at center-south, 3 AI evenly around them.
+  // Diamond layout, all 4 wrestlers visible from the start and well inside
+  // DANGER_RADIUS. Player sits a little ahead of true south so the
+  // camera (which follows the player at 85%) doesn't push the north slot
+  // off the top of the screen behind the HUD bar. The north AI is at 60%
+  // radius for the same reason. Previous layout bunched all 3 AI in the
+  // north strip near the edge, half-hidden by the HUD.
+  const SPAWN_R = ARENA_RADIUS * 0.42;
+  const playerPos = new THREE.Vector3(0, 0, SPAWN_R * 0.55);
+  const aiPositions: [number, number][] = [
+    [-SPAWN_R, 0],                // west
+    [0, -SPAWN_R * 0.60],         // north — pulled in to clear the HUD
+    [SPAWN_R, 0],                 // east
+  ];
   const player: SumoPenguin = {
     id: 'player',
     isPlayer: true,
     aiIx: -1,
-    position: new THREE.Vector3(0, 0, ARENA_RADIUS * 0.55),
+    position: playerPos,
     velocity: new THREE.Vector3(),
     rotation: Math.PI, // facing north toward the others
     state: 'idle',
@@ -71,18 +83,19 @@ function spawnInitial(d: GameRef) {
     beltColor: '#d8453e', // red mawashi for the player — classic
   };
   d.penguins.push(player);
-  // Three AI in a triangle on the north half
-  const angles = [Math.PI * 1.20, Math.PI * 1.50, Math.PI * 1.80];
   for (let i = 0; i < 3; i++) {
     const spec = AI_SPECS[i % AI_SPECS.length];
-    const a = angles[i];
+    const [px, pz] = aiPositions[i];
+    // Face the player by computing rotation from the AI's position. atan2(x, z)
+    // matches this game's convention where forward = (sin rot, cos rot).
+    const rot = Math.atan2(playerPos.x - px, playerPos.z - pz);
     d.penguins.push({
       id: `ai_${i}`,
       isPlayer: false,
       aiIx: i,
-      position: new THREE.Vector3(Math.cos(a) * ARENA_RADIUS * 0.55, 0, Math.sin(a) * ARENA_RADIUS * 0.55),
+      position: new THREE.Vector3(px, 0, pz),
       velocity: new THREE.Vector3(),
-      rotation: a + Math.PI, // face inward
+      rotation: rot,
       state: 'idle',
       charge: 0,
       burstT: 0,
