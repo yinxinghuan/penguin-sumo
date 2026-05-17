@@ -25,6 +25,9 @@ export interface GameRef {
   fx: FxEvent[];
   // remember the previous stick state so we can detect press→release for burst
   stickWasActive: boolean;
+  // cinematic time dilation — set < 1 momentarily on big hits, ramps back to 1
+  timeScale: number;
+  timeScaleHold: number;   // seconds remaining at the current scale before ramp-back
 }
 
 export function createGameState(): GameRef {
@@ -38,6 +41,8 @@ export function createGameState(): GameRef {
     gameOver: false,
     fx: [],
     stickWasActive: false,
+    timeScale: 1,
+    timeScaleHold: 0,
   };
 }
 
@@ -109,6 +114,9 @@ export interface GameLoopParams {
   onKo: (totalKos: number) => void;
   onGameOver: (final: number, won: boolean) => void;
   onCharge: (charge: number) => void;
+  // Big-hit pings for HUD overlay — power 0..1, x/z floor coords for floating
+  // impact text placement.
+  onImpact: (kind: 'bonk' | 'ko', power: number, x: number, z: number) => void;
   playSfx: (k: SfxKey) => void;
   haptic?: (k: 'light' | 'heavy') => void;
 }
@@ -122,7 +130,17 @@ export function useGameLoop(p: GameLoopParams) {
   useFrame((_, delta) => {
     const d = p.state.current;
     if (!p.playing || d.gameOver) return;
-    const c = Math.min(delta, 0.05);
+    // Time-dilation for hit-stop: while timeScaleHold > 0 we hold the slowed
+    // scale, then ramp back to 1 over 0.3s. The wall-clock keeps moving so
+    // the dilation lasts a fixed amount of real time regardless of how slow
+    // the game gets.
+    const wallC = Math.min(delta, 0.05);
+    if (d.timeScaleHold > 0) {
+      d.timeScaleHold = Math.max(0, d.timeScaleHold - wallC);
+    } else if (d.timeScale < 1) {
+      d.timeScale = Math.min(1, d.timeScale + wallC / 0.30);
+    }
+    const c = wallC * d.timeScale;
     d.time += c;
     d.timeLeft = Math.max(0, d.timeLeft - c);
     p.onTime(d.timeLeft);
@@ -357,7 +375,23 @@ export function useGameLoop(p: GameLoopParams) {
           const mz = (a.position.z + b.position.z) / 2;
           emitFx(d, 'bonk', mx, mz);
           p.playSfx('bonk');
+          // Power 0..1 by closing speed normalized to BURST_MAX_SPEED ≈ 26
+          const power = Math.min(1, closingSpeed / 22);
+          p.onImpact('bonk', power, mx, mz);
           if (a.isPlayer || b.isPlayer) p.haptic?.('heavy');
+          // HIT-STOP — only the big hits trigger time dilation. Tier:
+          //   light (closing 4-10)  → no hit-stop
+          //   medium (10-16)        → 0.05s of 0.55x
+          //   heavy (16+)           → 0.15s of 0.30x
+          if (closingSpeed >= 16) {
+            d.timeScale = 0.30;
+            d.timeScaleHold = 0.15;
+          } else if (closingSpeed >= 10) {
+            if (d.timeScale > 0.55) {
+              d.timeScale = 0.55;
+              d.timeScaleHold = Math.max(d.timeScaleHold, 0.05);
+            }
+          }
         }
       }
     }
@@ -374,6 +408,9 @@ export function useGameLoop(p: GameLoopParams) {
           peng.fellOutAt = d.time;
           emitFx(d, 'splash', peng.position.x, peng.position.z);
           p.playSfx('ko');
+          // KO is always a big-hit moment — hit-stop + impact ping
+          d.timeScale = 0.22;
+          d.timeScaleHold = 0.22;
           // Score attribution — was a recent hit responsible?
           const recent = d.time - peng.lastImpactAt < KO_HISTORY_WINDOW;
           if (recent && peng.lastImpactFrom) {
@@ -385,7 +422,14 @@ export function useGameLoop(p: GameLoopParams) {
               p.onKo(d.kos);
               p.playSfx('cheer');
               emitFx(d, 'ko', peng.position.x, peng.position.z);
+              p.onImpact('ko', 1, peng.position.x, peng.position.z);
+            } else {
+              // Even if no one gets credit, surface a smaller KO ping so the
+              // ring-out moment still reads as climactic.
+              p.onImpact('ko', 0.6, peng.position.x, peng.position.z);
             }
+          } else {
+            p.onImpact('ko', 0.6, peng.position.x, peng.position.z);
           }
         }
       }

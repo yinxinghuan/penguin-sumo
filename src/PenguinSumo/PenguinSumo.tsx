@@ -25,6 +25,13 @@ export function PenguinSumo() {
   const [finalScore, setFinalScore] = useState(0);
   const [won, setWon] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  // Floating impact text + screen flash queue. Each event renders a brief
+  // overlay with a CSS keyframe animation so the comic punch reads through.
+  const [hits, setHits] = useState<{ key: number; label: string; big: boolean; ts: number }[]>([]);
+  const [flashKey, setFlashKey] = useState(0);
+  const [flashBig, setFlashBig] = useState(false);
+  // Player's current charge magnitude, used to gate the joystick max-charge halo.
+  const [chargeMag, setChargeMag] = useState(0);
 
   const stateRef = useRef(createGameState());
   const { stickRef, view } = useJoystick(phase === 'playing');
@@ -41,8 +48,23 @@ export function PenguinSumo() {
   const onScore = useCallback((s: number) => setScore(Math.floor(s)), []);
   const onTime = useCallback((t: number) => setTimeLeft(Math.max(0, t)), []);
   const onKo = useCallback((n: number) => setKos(n), []);
-  // ChargeRing reads charge straight from the game state ref, so no React state.
-  const onCharge = useCallback((_c: number) => { /* no-op — visual driven via useFrame */ }, []);
+  const onCharge = useCallback((c: number) => setChargeMag(c), []);
+
+  const onImpact = useCallback((kind: 'bonk' | 'ko', power: number, _x: number, _z: number) => {
+    if (power < 0.30 && kind === 'bonk') return; // skip tiny taps
+    const label = kind === 'ko' ? 'K.O.!' : (power > 0.75 ? 'WHAM!' : power > 0.55 ? 'BONK!' : 'POW!');
+    const big = kind === 'ko' || power > 0.75;
+    const key = Date.now() + Math.random();
+    setHits(h => [...h.filter(x => Date.now() - x.ts < 1200), { key, label, big, ts: Date.now() }]);
+    setFlashKey(k => k + 1);
+    setFlashBig(big);
+    // Stronger haptic on big hits — 60ms patterned vibration
+    if ('vibrate' in navigator) {
+      navigator.vibrate(big ? [50, 30, 25] : [25]);
+    }
+    // Auto-cull stale hits
+    setTimeout(() => setHits(h => h.filter(x => x.key !== key)), 1200);
+  }, []);
 
   const onGameOver = useCallback((final: number, didWin: boolean) => {
     setFinalScore(final);
@@ -85,6 +107,7 @@ export function PenguinSumo() {
               onTime={onTime}
               onKo={onKo}
               onCharge={onCharge}
+              onImpact={onImpact}
               onGameOver={onGameOver}
               playSfx={(k: SfxKey) => playSfx(k)}
               haptic={haptic}
@@ -119,10 +142,21 @@ export function PenguinSumo() {
 
       {view.active && (
         <div className="ps__joystick" style={{ left: view.ox, top: view.oy }}>
-          <div className="ps__joystick__ring">
+          <div className={`ps__joystick__ring ${chargeMag >= 1 ? 'ps__joystick__ring--max' : ''}`}>
             <div className="ps__joystick__stick" style={{ transform: `translate(calc(-50% + ${view.x}px), calc(-50% + ${view.y}px))` }} />
+            {chargeMag > 0 && (
+              <div className="ps__joystick__charge" style={{ transform: `scale(${1 + chargeMag * 0.15})`, opacity: chargeMag * 0.7 }} />
+            )}
           </div>
         </div>
+      )}
+
+      {/* Impact feedback overlays — screen-tinted flash + floating text */}
+      {showCanvas && hits.map(h => (
+        <div key={h.key} className={`ps__hit ${h.big ? 'ps__hit--big' : ''}`}>{h.label}</div>
+      ))}
+      {showCanvas && flashKey > 0 && (
+        <div key={flashKey} className={`ps__flash ${flashBig ? 'ps__flash--big' : ''}`} />
       )}
 
       {phase === 'splash' && <SplashScene onStart={start} highScore={highScore} />}

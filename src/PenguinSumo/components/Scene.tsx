@@ -16,6 +16,7 @@ interface SceneProps {
   onKo: (n: number) => void;
   onGameOver: (final: number, won: boolean) => void;
   onCharge: (c: number) => void;
+  onImpact: (kind: 'bonk' | 'ko', power: number, x: number, z: number) => void;
   playSfx: (k: SfxKey) => void;
   haptic?: (k: 'light' | 'heavy') => void;
 }
@@ -51,16 +52,29 @@ function CameraRig({ state }: { state: React.MutableRefObject<GameRef> }) {
       if (fx.type !== 'bonk' && fx.type !== 'ko') continue;
       if (seenBonks.current.has(fx.key)) continue;
       seenBonks.current.add(fx.key);
-      shakeT.current = Math.max(shakeT.current, fx.type === 'ko' ? 0.45 : 0.22);
+      shakeT.current = Math.max(shakeT.current, fx.type === 'ko' ? 0.65 : 0.35);
     }
     shakeT.current = Math.max(0, shakeT.current - c);
-    const shakeMag = Math.pow(shakeT.current / 0.45, 1.2) * 0.55;
+    // Punchier shake — wider amplitude + high-frequency wobble. Settle curve
+    // stays Math.pow(..., 1.2) so it tails off naturally.
+    const shakeMag = Math.pow(shakeT.current / 0.45, 1.2) * 1.4;
     const sx = (Math.random() - 0.5) * shakeMag;
-    const sz = (Math.random() - 0.5) * shakeMag * 0.6;
+    const sz = (Math.random() - 0.5) * shakeMag * 0.7;
+    const sy = (Math.random() - 0.5) * shakeMag * 0.4;
 
     // Subtle follow — bias camera 15% toward player
-    const fx = player.position.x * 0.15;
-    const fz = player.position.z * 0.15;
+    let fxC = player.position.x * 0.15;
+    let fzC = player.position.z * 0.15;
+    // Look-ahead — while charging, push the camera in the AIM direction by
+    // charge × constant so the player can see more of what's ahead. Reverses
+    // the slingshot feel: finger pulls back → camera pushes forward.
+    if (player.state === 'charging' && player.charge > 0) {
+      const aimX = Math.sin(player.rotation);
+      const aimZ = Math.cos(player.rotation);
+      const push = player.charge * 2.6;
+      fxC += aimX * push;
+      fzC += aimZ * push;
+    }
     // Burst kick — pull camera in (lower y, closer z) while player is bursting
     let kickY = 0, kickZ = 0;
     if (player.state === 'bursting') {
@@ -70,12 +84,23 @@ function CameraRig({ state }: { state: React.MutableRefObject<GameRef> }) {
     }
 
     desiredPos.set(
-      CAMERA_POS[0] + fx + sx,
-      CAMERA_POS[1] - kickY,
-      CAMERA_POS[2] + fz - kickZ + sz,
+      CAMERA_POS[0] + fxC + sx,
+      CAMERA_POS[1] - kickY + sy,
+      CAMERA_POS[2] + fzC - kickZ + sz,
     );
-    camera.position.lerp(desiredPos, 0.18);
-    lookAtTarget.set(player.position.x * 0.35, 0, player.position.z * 0.35);
+    // Faster lerp during shake so the wobble actually shows up
+    const lerpRate = shakeT.current > 0 ? 0.55 : 0.18;
+    camera.position.lerp(desiredPos, lerpRate);
+    // Look-at also biases forward so the player isn't always perfectly centered
+    let laX = player.position.x * 0.35;
+    let laZ = player.position.z * 0.35;
+    if (player.state === 'charging' && player.charge > 0) {
+      const aimX = Math.sin(player.rotation);
+      const aimZ = Math.cos(player.rotation);
+      laX += aimX * player.charge * 2.0;
+      laZ += aimZ * player.charge * 2.0;
+    }
+    lookAtTarget.set(laX, 0, laZ);
     camera.lookAt(lookAtTarget);
   });
   return null;
@@ -197,11 +222,18 @@ function ChargeRing({ state }: { state: React.MutableRefObject<GameRef> }) {
 // charge. Tells you exactly which way the dash will fire and roughly how
 // hard. Hidden when not charging. Built from a thin plane stretched along Z
 // with a small triangle tip mesh at the end.
+//
+// Also draws a "rubber band" trail BEHIND the player on the floor — the
+// stretched portion of the slingshot. Goes from the player's heel back to a
+// point opposite the aim direction. Length scales with charge. Color leans
+// red as the band stretches further, reinforcing the "tension" reading.
 function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
   const shaftRef = useRef<THREE.Mesh>(null);
   const tipRef = useRef<THREE.Mesh>(null);
   const shaftMat = useRef<THREE.MeshBasicMaterial>(null);
   const tipMat = useRef<THREE.MeshBasicMaterial>(null);
+  const bandRef = useRef<THREE.Mesh>(null);
+  const bandMat = useRef<THREE.MeshBasicMaterial>(null);
   const lerpColor = useMemo(() => new THREE.Color(), []);
   const cWhite = useMemo(() => new THREE.Color('#fff5dd'), []);
   const cAmber = useMemo(() => new THREE.Color('#ff9d00'), []);
@@ -210,11 +242,12 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
   useFrame(() => {
     const d = state.current;
     const player = d.penguins.find(p => p.isPlayer);
-    if (!shaftRef.current || !tipRef.current || !shaftMat.current || !tipMat.current || !player) return;
+    if (!shaftRef.current || !tipRef.current || !shaftMat.current || !tipMat.current || !bandRef.current || !bandMat.current || !player) return;
 
     const charging = player.state === 'charging' && player.charge > 0.05;
     shaftRef.current.visible = charging;
     tipRef.current.visible = charging;
+    bandRef.current.visible = charging;
     if (!charging) return;
 
     const charge = player.charge;
@@ -247,6 +280,22 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
     const op = 0.55 + charge * 0.35;
     shaftMat.current.opacity = op;
     tipMat.current.opacity = op + 0.1;
+
+    // Rubber-band trail behind the player — points OPPOSITE the aim direction,
+    // length grows with charge, color lerps from cool toward hot pink-red.
+    const bandLen = 0.6 + charge * 2.6;
+    const bandMidX = player.position.x - fx * bandLen * 0.5;
+    const bandMidZ = player.position.z - fz * bandLen * 0.5;
+    bandRef.current.position.set(bandMidX, 0.043, bandMidZ);
+    // Same rotation orient as the shaft, but the plane's positive-Y axis now
+    // points opposite (toward the band's tail).
+    bandRef.current.rotation.set(-Math.PI / 2, 0, -player.rotation + Math.PI);
+    bandRef.current.scale.set(0.20 + charge * 0.10, bandLen, 1);
+    // Color lerp — cool white at low charge → hot pink-red at full
+    if (charge < 0.5) lerpColor.copy(cWhite).lerp(cAmber, charge / 0.5);
+    else              lerpColor.copy(cAmber).lerp(cRed,   (charge - 0.5) / 0.5);
+    bandMat.current.color.copy(lerpColor);
+    bandMat.current.opacity = 0.35 + charge * 0.5;
   });
 
   return (
@@ -272,6 +321,18 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
           color="#fff5dd"
           transparent
           opacity={0.85}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      {/* Slingshot rubber band — a stretched plane behind the player */}
+      <mesh ref={bandRef}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          ref={bandMat}
+          color="#fff5dd"
+          transparent
+          opacity={0.5}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
@@ -428,21 +489,38 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
             if (!refs.current.has(key)) refs.current.set(key, { ring: null, ringMat: null, flash: null, flashMat: null });
             return refs.current.get(key)!;
           };
+          // 6 radial spark lines for that comic-impact star burst look
+          const spokes = 6;
           return (
-            <group key={fx.key} position={[fx.x, 0.06, fx.z]}>
+            <group key={fx.key} position={[fx.x, 0.07, fx.z]}>
               <mesh
                 rotation={[-Math.PI / 2, 0, 0]}
                 ref={el => { const r = ensure(fx.key); r.ring = el; r.ringMat = el ? (el.material as THREE.MeshBasicMaterial) : null; }}
               >
-                <ringGeometry args={[0.45, 0.65, 28]} />
-                <meshBasicMaterial color={fx.type === 'ko' ? '#38e6ff' : '#ffd84a'} transparent opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending} />
+                <ringGeometry args={[0.45, 0.78, 32]} />
+                <meshBasicMaterial color={fx.type === 'ko' ? '#38e6ff' : '#ffd84a'} transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} />
               </mesh>
               <mesh
                 ref={el => { const r = ensure(fx.key); r.flash = el; r.flashMat = el ? (el.material as THREE.MeshBasicMaterial) : null; }}
               >
-                <sphereGeometry args={[0.5, 14, 10]} />
-                <meshBasicMaterial color={fx.type === 'ko' ? '#cfe0f0' : '#fff5dd'} transparent opacity={0.5} depthWrite={false} blending={THREE.AdditiveBlending} />
+                <sphereGeometry args={[0.65, 14, 10]} />
+                <meshBasicMaterial color={fx.type === 'ko' ? '#cfe0f0' : '#fff5dd'} transparent opacity={0.6} depthWrite={false} blending={THREE.AdditiveBlending} />
               </mesh>
+              {/* radial spark spokes — a star-burst of 6 short thin planes */}
+              {Array.from({ length: spokes }).map((_, i) => {
+                const a = (i / spokes) * Math.PI * 2;
+                return (
+                  <mesh
+                    key={i}
+                    rotation={[-Math.PI / 2, 0, -a]}
+                    position={[Math.cos(a) * 0.8, 0, Math.sin(a) * 0.8]}
+                    scale={[0.10, 1.2, 1]}
+                  >
+                    <planeGeometry args={[1, 1]} />
+                    <meshBasicMaterial color={fx.type === 'ko' ? '#cfe0f0' : '#fff5dd'} transparent opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending} />
+                  </mesh>
+                );
+              })}
             </group>
           );
         })}
@@ -557,6 +635,7 @@ export function Scene(props: SceneProps) {
     onKo: props.onKo,
     onGameOver: props.onGameOver,
     onCharge: props.onCharge,
+    onImpact: props.onImpact,
     playSfx: props.playSfx,
     haptic: props.haptic,
   });
