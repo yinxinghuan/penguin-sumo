@@ -32,6 +32,11 @@ export function PenguinSumo() {
   const [flashBig, setFlashBig] = useState(false);
   // Player's current charge magnitude, used to gate the joystick max-charge halo.
   const [chargeMag, setChargeMag] = useState(0);
+  // Player's screen-projected position — used as the anchor for the slingshot
+  // rubber band that stretches from the wrestler to the user's finger ring.
+  const playerScreen = useRef({ x: 0, y: 0 });
+  // Re-render flag so the SVG line repositions while the player moves.
+  const [, forceRender] = useState(0);
 
   const stateRef = useRef(createGameState());
   const { stickRef, view } = useJoystick(phase === 'playing');
@@ -49,6 +54,15 @@ export function PenguinSumo() {
   const onTime = useCallback((t: number) => setTimeLeft(Math.max(0, t)), []);
   const onKo = useCallback((n: number) => setKos(n), []);
   const onCharge = useCallback((c: number) => setChargeMag(c), []);
+
+  const onPlayerScreen = useCallback((x: number, y: number) => {
+    playerScreen.current.x = x;
+    playerScreen.current.y = y;
+    // The SVG line uses this ref, so we need to nudge React to re-render.
+    // Cheap because the SVG is the only thing reading this; useFrame would
+    // be more efficient but adding it for a single line isn't worth the wiring.
+    forceRender(v => (v + 1) % 1000);
+  }, []);
 
   const onImpact = useCallback((kind: 'bonk' | 'ko', power: number, _x: number, _z: number) => {
     if (power < 0.30 && kind === 'bonk') return; // skip tiny taps
@@ -108,6 +122,7 @@ export function PenguinSumo() {
               onKo={onKo}
               onCharge={onCharge}
               onImpact={onImpact}
+              onPlayerScreen={onPlayerScreen}
               onGameOver={onGameOver}
               playSfx={(k: SfxKey) => playSfx(k)}
               haptic={haptic}
@@ -149,6 +164,45 @@ export function PenguinSumo() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Slingshot rubber-band line — connects the wrestler's screen position
+          to the user's finger (joystick stick), stretching + reddening with
+          charge. This is THE slingshot visual; the in-world arrow tells you
+          where the dash fires, the HUD line tells you how hard you're pulling. */}
+      {view.active && chargeMag > 0.05 && (
+        <svg className="ps__slingline" width="100%" height="100%">
+          <defs>
+            <filter id="ps-sling-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <line
+            x1={playerScreen.current.x}
+            y1={playerScreen.current.y}
+            x2={view.ox + view.x}
+            y2={view.oy + view.y}
+            stroke={chargeMag < 0.5 ? '#ffc070' : chargeMag < 1 ? '#ff7a3a' : '#ff2030'}
+            strokeWidth={4 + chargeMag * 6}
+            strokeLinecap="round"
+            strokeDasharray={chargeMag >= 1 ? '0' : '12 6'}
+            filter="url(#ps-sling-glow)"
+            opacity={0.85}
+          />
+          {/* Player-side knot — circle at the wrestler end of the band */}
+          <circle
+            cx={playerScreen.current.x}
+            cy={playerScreen.current.y}
+            r={6 + chargeMag * 4}
+            fill={chargeMag < 0.5 ? '#ffc070' : chargeMag < 1 ? '#ff7a3a' : '#ff2030'}
+            opacity={0.9}
+            filter="url(#ps-sling-glow)"
+          />
+        </svg>
       )}
 
       {/* Impact feedback overlays — screen-tinted flash + floating text */}

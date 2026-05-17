@@ -17,6 +17,7 @@ interface SceneProps {
   onGameOver: (final: number, won: boolean) => void;
   onCharge: (c: number) => void;
   onImpact: (kind: 'bonk' | 'ko', power: number, x: number, z: number) => void;
+  onPlayerScreen: (x: number, y: number) => void;
   playSfx: (k: SfxKey) => void;
   haptic?: (k: 'light' | 'heavy') => void;
 }
@@ -183,156 +184,89 @@ function DangerRing({ state }: { state: React.MutableRefObject<GameRef> }) {
   );
 }
 
-// Charge ring under the player — pulses + color-lerps from white → amber →
-// red as the charge fills. Reads as a power gauge orbiting the player.
-function ChargeRing({ state }: { state: React.MutableRefObject<GameRef> }) {
-  const ringRef = useRef<THREE.Mesh>(null);
-  const matRef = useRef<THREE.MeshBasicMaterial>(null);
-  const lerpColor = useMemo(() => new THREE.Color(), []);
-  const cWhite = useMemo(() => new THREE.Color('#fff5dd'), []);
-  const cAmber = useMemo(() => new THREE.Color('#ff9d00'), []);
-  const cRed = useMemo(() => new THREE.Color('#ff2030'), []);
-  useFrame(({ clock }) => {
-    const d = state.current;
-    const player = d.penguins.find(p => p.isPlayer);
-    if (!ringRef.current || !matRef.current || !player) return;
-    ringRef.current.position.set(player.position.x, 0.04, player.position.z);
-    const charge = player.charge;
-    const s = 0.7 + charge * 0.45;
-    ringRef.current.scale.set(s, 1, s);
-    // Color: white → amber midway → red at full
-    if (charge < 0.5) lerpColor.copy(cWhite).lerp(cAmber, charge / 0.5);
-    else              lerpColor.copy(cAmber).lerp(cRed,   (charge - 0.5) / 0.5);
-    matRef.current.color.copy(lerpColor);
-    // Opacity / pulse
-    const basePulse = 0.5 + Math.sin(clock.getElapsedTime() * 10) * 0.18 * charge;
-    if (player.state === 'charging') matRef.current.opacity = 0.6 + basePulse * 0.5 + charge * 0.25;
-    else if (player.state === 'bursting') matRef.current.opacity = 0.85;
-    else matRef.current.opacity = 0.25;
+// Project the player's world position to screen pixels each frame and report
+// it back to the HUD so the slingshot rubber band can connect its 3D source
+// (penguin) to its 2D target (finger / joystick stick).
+function PlayerScreenTracker({ state, onPos }: { state: React.MutableRefObject<GameRef>; onPos: (x: number, y: number) => void }) {
+  const { camera, size } = useThree();
+  const v = useMemo(() => new THREE.Vector3(), []);
+  useFrame(() => {
+    const player = state.current.penguins.find(p => p.isPlayer);
+    if (!player) return;
+    v.set(player.position.x, 1.0, player.position.z);
+    v.project(camera);
+    const px = (v.x * 0.5 + 0.5) * size.width;
+    const py = (-v.y * 0.5 + 0.5) * size.height;
+    onPos(px, py);
   });
-  return (
-    <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]}>
-      <ringGeometry args={[0.85, 1.10, 32]} />
-      <meshBasicMaterial ref={matRef} color="#fff5dd" transparent opacity={0.3} depthWrite={false} blending={THREE.AdditiveBlending} />
-    </mesh>
-  );
+  return null;
 }
 
-// Direction-and-power arrow that extends in front of the player as they
-// charge. Tells you exactly which way the dash will fire and roughly how
-// hard. Hidden when not charging. Built from a thin plane stretched along Z
-// with a small triangle tip mesh at the end.
-//
-// Also draws a "rubber band" trail BEHIND the player on the floor — the
-// stretched portion of the slingshot. Goes from the player's heel back to a
-// point opposite the aim direction. Length scales with charge. Color leans
-// red as the band stretches further, reinforcing the "tension" reading.
+// Forward direction arrow — RED chevron-shaped plane on the floor pointing
+// where the dash will fire. Length + brightness scale with charge. The
+// in-world charge feedback now lives entirely on this arrow + the joystick
+// rubber band (drawn in the HUD layer outside this canvas); the old white
+// ChargeRing and the backward rubber-band trail are gone, since stacking
+// three near-white shapes on the floor was visually noisy.
 function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
   const shaftRef = useRef<THREE.Mesh>(null);
   const tipRef = useRef<THREE.Mesh>(null);
   const shaftMat = useRef<THREE.MeshBasicMaterial>(null);
   const tipMat = useRef<THREE.MeshBasicMaterial>(null);
-  const bandRef = useRef<THREE.Mesh>(null);
-  const bandMat = useRef<THREE.MeshBasicMaterial>(null);
-  const lerpColor = useMemo(() => new THREE.Color(), []);
-  const cWhite = useMemo(() => new THREE.Color('#fff5dd'), []);
-  const cAmber = useMemo(() => new THREE.Color('#ff9d00'), []);
-  const cRed = useMemo(() => new THREE.Color('#ff2030'), []);
 
   useFrame(() => {
     const d = state.current;
     const player = d.penguins.find(p => p.isPlayer);
-    if (!shaftRef.current || !tipRef.current || !shaftMat.current || !tipMat.current || !bandRef.current || !bandMat.current || !player) return;
+    if (!shaftRef.current || !tipRef.current || !shaftMat.current || !tipMat.current || !player) return;
 
     const charging = player.state === 'charging' && player.charge > 0.05;
     shaftRef.current.visible = charging;
     tipRef.current.visible = charging;
-    bandRef.current.visible = charging;
     if (!charging) return;
 
     const charge = player.charge;
-    // Forward unit vector (player's local +Z direction)
     const fx = Math.sin(player.rotation);
     const fz = Math.cos(player.rotation);
-    // Arrow length scales with charge — visible enough at low charge to read
-    // direction, dramatic at full charge.
-    const length = 0.9 + charge * 3.4;
-    // Shaft: position at player + forward * (length/2), oriented along the
-    // forward axis. PlaneGeometry is XY; rotate -90° X to lay flat, then yaw
-    // so its long axis aligns with the forward vector.
+    // Min length so the direction is immediately readable even at low charge
+    const length = 1.4 + charge * 3.2;
     const midX = player.position.x + fx * length * 0.5;
     const midZ = player.position.z + fz * length * 0.5;
     shaftRef.current.position.set(midX, 0.045, midZ);
     shaftRef.current.rotation.set(-Math.PI / 2, 0, -player.rotation);
-    shaftRef.current.scale.set(0.32 + charge * 0.10, length, 1);
-    // Tip: position at player + forward * length, oriented along forward
+    shaftRef.current.scale.set(0.36 + charge * 0.10, length, 1);
     const tipX = player.position.x + fx * length;
     const tipZ = player.position.z + fz * length;
     tipRef.current.position.set(tipX, 0.05, tipZ);
     tipRef.current.rotation.set(-Math.PI / 2, 0, -player.rotation);
-    const tipSize = 0.55 + charge * 0.35;
+    const tipSize = 0.85 + charge * 0.45;
     tipRef.current.scale.set(tipSize, tipSize, 1);
-    // Color: white → amber → red as charge fills
-    if (charge < 0.5) lerpColor.copy(cWhite).lerp(cAmber, charge / 0.5);
-    else              lerpColor.copy(cAmber).lerp(cRed,   (charge - 0.5) / 0.5);
-    shaftMat.current.color.copy(lerpColor);
-    tipMat.current.color.copy(lerpColor);
-    const op = 0.55 + charge * 0.35;
-    shaftMat.current.opacity = op;
-    tipMat.current.opacity = op + 0.1;
-
-    // Rubber-band trail behind the player — points OPPOSITE the aim direction,
-    // length grows with charge, color lerps from cool toward hot pink-red.
-    const bandLen = 0.6 + charge * 2.6;
-    const bandMidX = player.position.x - fx * bandLen * 0.5;
-    const bandMidZ = player.position.z - fz * bandLen * 0.5;
-    bandRef.current.position.set(bandMidX, 0.043, bandMidZ);
-    // Same rotation orient as the shaft, but the plane's positive-Y axis now
-    // points opposite (toward the band's tail).
-    bandRef.current.rotation.set(-Math.PI / 2, 0, -player.rotation + Math.PI);
-    bandRef.current.scale.set(0.20 + charge * 0.10, bandLen, 1);
-    // Color lerp — cool white at low charge → hot pink-red at full
-    if (charge < 0.5) lerpColor.copy(cWhite).lerp(cAmber, charge / 0.5);
-    else              lerpColor.copy(cAmber).lerp(cRed,   (charge - 0.5) / 0.5);
-    bandMat.current.color.copy(lerpColor);
-    bandMat.current.opacity = 0.35 + charge * 0.5;
+    // Brightness builds with charge but the hue stays solidly red so the
+    // arrow always reads as "dash this way."
+    const baseOp = 0.7 + charge * 0.3;
+    shaftMat.current.opacity = baseOp;
+    tipMat.current.opacity = Math.min(1, baseOp + 0.15);
   });
 
   return (
     <>
-      {/* Shaft — thin plane stretched along its local Y (which becomes forward
-          after rotation -PI/2 around X) */}
       <mesh ref={shaftRef}>
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
           ref={shaftMat}
-          color="#fff5dd"
-          transparent
-          opacity={0.6}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      {/* Triangular tip at the head of the arrow */}
-      <mesh ref={tipRef}>
-        <shapeGeometry args={[arrowTipShape()]} />
-        <meshBasicMaterial
-          ref={tipMat}
-          color="#fff5dd"
+          color="#ff2a3a"
           transparent
           opacity={0.85}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {/* Slingshot rubber band — a stretched plane behind the player */}
-      <mesh ref={bandRef}>
-        <planeGeometry args={[1, 1]} />
+      <mesh ref={tipRef}>
+        <shapeGeometry args={[arrowTipShape()]} />
         <meshBasicMaterial
-          ref={bandMat}
-          color="#fff5dd"
+          ref={tipMat}
+          color="#ff4a5a"
           transparent
-          opacity={0.5}
+          opacity={0.95}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
@@ -368,37 +302,52 @@ function PlayerRing({ state }: { state: React.MutableRefObject<GameRef> }) {
   );
 }
 
-// AI charge telegraph — same arrow shape as the player's but rendered red
-// so the player can see which way each AI is about to dash. Length scales
-// with the AI's charge progress; only visible while the AI is charging.
+// AI charge telegraph — forward red arrow + backward "virtual-slingshot"
+// stretch tail. The AI doesn't have a real finger, so the tail behind it
+// stands in for the user's slingshot pull. Same red color as the player's
+// HUD rubber-band, so the player learns the language by watching: "red
+// stretch behind → red arrow forward → dash forward."
 function AiTelegraphs({ state }: { state: React.MutableRefObject<GameRef> }) {
   const shaftRefs = useRef<Map<string, THREE.Mesh>>(new Map());
   const tipRefs = useRef<Map<string, THREE.Mesh>>(new Map());
+  const tailRefs = useRef<Map<string, THREE.Mesh>>(new Map());
   useFrame(() => {
     const d = state.current;
     for (const peng of d.penguins) {
       if (peng.isPlayer) continue;
       const shaft = shaftRefs.current.get(peng.id);
       const tip = tipRefs.current.get(peng.id);
-      if (!shaft || !tip) continue;
+      const tail = tailRefs.current.get(peng.id);
+      if (!shaft || !tip || !tail) continue;
       const visible = peng.state === 'charging' && peng.charge > 0.20;
       shaft.visible = visible;
       tip.visible = visible;
+      tail.visible = visible;
       if (!visible) continue;
       const fx = Math.sin(peng.rotation);
       const fz = Math.cos(peng.rotation);
-      const length = 0.7 + peng.charge * 2.6;
+      const length = 1.0 + peng.charge * 2.8;
       shaft.position.set(peng.position.x + fx * length * 0.5, 0.042, peng.position.z + fz * length * 0.5);
       shaft.rotation.set(-Math.PI / 2, 0, -peng.rotation);
-      shaft.scale.set(0.20 + peng.charge * 0.08, length, 1);
+      shaft.scale.set(0.26 + peng.charge * 0.08, length, 1);
       tip.position.set(peng.position.x + fx * length, 0.046, peng.position.z + fz * length);
       tip.rotation.set(-Math.PI / 2, 0, -peng.rotation);
-      const tipS = 0.35 + peng.charge * 0.25;
+      const tipS = 0.55 + peng.charge * 0.35;
       tip.scale.set(tipS, tipS, 1);
+      // Backward "stretch tail" — same length, opposite direction. Tapered
+      // narrower than the forward shaft so it reads as the elastic, not as
+      // another arrow.
+      const tailLen = 0.5 + peng.charge * 2.0;
+      tail.position.set(peng.position.x - fx * tailLen * 0.5, 0.041, peng.position.z - fz * tailLen * 0.5);
+      tail.rotation.set(-Math.PI / 2, 0, -peng.rotation + Math.PI);
+      tail.scale.set(0.14 + peng.charge * 0.06, tailLen, 1);
+
       const mat1 = shaft.material as THREE.MeshBasicMaterial;
       const mat2 = tip.material as THREE.MeshBasicMaterial;
-      mat1.opacity = 0.35 + peng.charge * 0.45;
-      mat2.opacity = 0.55 + peng.charge * 0.40;
+      const mat3 = tail.material as THREE.MeshBasicMaterial;
+      mat1.opacity = 0.65 + peng.charge * 0.30;
+      mat2.opacity = 0.80 + peng.charge * 0.20;
+      mat3.opacity = 0.45 + peng.charge * 0.30;
     }
   });
   const d = state.current;
@@ -413,7 +362,7 @@ function AiTelegraphs({ state }: { state: React.MutableRefObject<GameRef> }) {
             }}
           >
             <planeGeometry args={[1, 1]} />
-            <meshBasicMaterial color="#ff3a4a" transparent opacity={0.4} depthWrite={false} blending={THREE.AdditiveBlending} />
+            <meshBasicMaterial color="#ff2a3a" transparent opacity={0.7} depthWrite={false} blending={THREE.AdditiveBlending} />
           </mesh>
           <mesh
             ref={el => {
@@ -422,7 +371,17 @@ function AiTelegraphs({ state }: { state: React.MutableRefObject<GameRef> }) {
             }}
           >
             <shapeGeometry args={[arrowTipShape()]} />
-            <meshBasicMaterial color="#ff3a4a" transparent opacity={0.6} depthWrite={false} blending={THREE.AdditiveBlending} />
+            <meshBasicMaterial color="#ff4a5a" transparent opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending} />
+          </mesh>
+          {/* backward stretch tail */}
+          <mesh
+            ref={el => {
+              if (el) tailRefs.current.set(peng.id, el);
+              else tailRefs.current.delete(peng.id);
+            }}
+          >
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial color="#ff2a3a" transparent opacity={0.5} depthWrite={false} blending={THREE.AdditiveBlending} />
           </mesh>
         </group>
       ))}
@@ -713,7 +672,6 @@ export function Scene(props: SceneProps) {
 
       <DangerRing state={state} />
       <PlayerRing state={state} />
-      <ChargeRing state={state} />
       <ChargeArrow state={state} />
       <AiRings state={state} />
       <AiTelegraphs state={state} />
@@ -722,6 +680,7 @@ export function Scene(props: SceneProps) {
       <ActorSync state={state} />
 
       <ImpactBursts state={state} />
+      <PlayerScreenTracker state={state} onPos={props.onPlayerScreen} />
     </>
   );
 }
