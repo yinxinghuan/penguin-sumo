@@ -101,12 +101,40 @@ function spawnInitial(d: GameRef) {
   }
 }
 
-function emitFx(d: GameRef, type: FxEvent['type'], x: number, z: number) {
-  d.fx.push({ key: Math.random(), type, x, z, born: d.time });
+function emitFx(d: GameRef, type: FxEvent['type'], x: number, z: number, dx?: number, dz?: number, y?: number) {
+  d.fx.push({ key: Math.random(), type, x, z, born: d.time, dx, dz, y });
   // garbage-collect old fx (>2s) so the array doesn't grow forever
-  if (d.fx.length > 24) {
+  if (d.fx.length > 64) {
     d.fx = d.fx.filter(f => d.time - f.born < 2);
   }
+}
+
+// Sweat drops — shed off wrestlers who are straining (high charge) or
+// tumbling (falling). Position jitters around the wrestler's footprint,
+// chest-height by default; the renderer animates the arc upward + outward
+// before fading.
+function emitSweatIfNeeded(d: GameRef, peng: SumoPenguin) {
+  if (peng.state === 'gone') return;
+  const straining = peng.state === 'charging' && peng.charge > 0.65;
+  const tumbling = peng.state === 'falling';
+  if (!straining && !tumbling) return;
+  const interval = tumbling ? 0.10 : 0.18;
+  const anyP = peng as any;
+  const lastSweat = (anyP.lastSweatAt ?? -99) as number;
+  if (d.time - lastSweat < interval) return;
+  anyP.lastSweatAt = d.time;
+  const a = Math.random() * Math.PI * 2;
+  const dist = 0.4;
+  const cy = (peng.position.y ?? 0) + 1.05; // chest height
+  emitFx(
+    d,
+    'sweat',
+    peng.position.x + Math.cos(a) * dist,
+    peng.position.z + Math.sin(a) * dist,
+    Math.cos(a),
+    Math.sin(a),
+    cy,
+  );
 }
 
 export interface GameLoopParams {
@@ -298,6 +326,9 @@ export function useGameLoop(p: GameLoopParams) {
         if (peng.recoverT <= 0) peng.state = 'charging';
       }
     }
+
+    // Shed sweat drops on every penguin that's straining or tumbling
+    for (const peng of d.penguins) emitSweatIfNeeded(d, peng);
 
     // -----------------------------------------------------------------------
     // INTEGRATE — apply velocity to positions; apply friction for idle bodies.

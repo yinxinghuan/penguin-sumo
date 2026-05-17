@@ -44,11 +44,18 @@ export interface SumoPenguin {
 }
 
 // Floating effect (bonk burst, KO splash, charge flash, ripple/bubble after
-// a ring-out water hit)
+// a ring-out water hit, sweat drops while straining/tumbling)
 export interface FxEvent {
   key: number;
-  type: 'bonk' | 'splash' | 'ripple' | 'bubble' | 'ko' | 'charge';
+  type: 'bonk' | 'splash' | 'ripple' | 'bubble' | 'ko' | 'charge' | 'sweat';
   x: number;
   z: number;
   born: number;
+  // Optional initial Y position (world height). Used by 'sweat' to start at
+  // the emitter's chest height instead of on the floor; ignored by floor fx.
+  y?: number;
+  // Optional ground-plane direction vector — used by 'sweat' to fly out in a
+  // specific direction. Other types ignore it.
+  dx?: number;
+  dz?: number;
 }

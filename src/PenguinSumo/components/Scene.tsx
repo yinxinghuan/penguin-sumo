@@ -475,7 +475,7 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
     // Detect new fx → trigger React render to mount new meshes
     let changed = false;
     for (const fx of d.fx) {
-      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash' && fx.type !== 'ripple' && fx.type !== 'bubble') continue;
+      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash' && fx.type !== 'ripple' && fx.type !== 'bubble' && fx.type !== 'sweat') continue;
       if (!lastSeen.current.has(fx.key)) {
         lastSeen.current.add(fx.key);
         changed = true;
@@ -493,7 +493,7 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
     if (changed) force(x => x + 1);
     // Animate live ones
     for (const fx of d.fx) {
-      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash' && fx.type !== 'ripple' && fx.type !== 'bubble') continue;
+      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash' && fx.type !== 'ripple' && fx.type !== 'bubble' && fx.type !== 'sweat') continue;
       const r = refs.current.get(fx.key);
       if (!r) continue;
       const age = d.time - fx.born;
@@ -501,6 +501,7 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
         fx.type === 'ripple' ? 2.5 :
         fx.type === 'bubble' ? 1.8 :
         fx.type === 'splash' ? 1.4 :
+        fx.type === 'sweat'  ? 0.55 :
         fx.type === 'ko'     ? 1.0 :
                                 0.45;
       const t = Math.min(1, age / dur);
@@ -527,6 +528,20 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
           // Lateral wobble
           r.flash.position.x = Math.sin(t * Math.PI * 3) * 0.10;
           r.flashMat.opacity = (1 - t) * 0.75;
+        } else if (fx.type === 'sweat') {
+          // Sweat drop: ballistic arc — initial upward velocity + lateral
+          // direction, gravity pulls back down, drop fades. The group is
+          // anchored at the emit point; we offset the inner mesh.
+          const dx = fx.dx ?? 0;
+          const dz = fx.dz ?? 0;
+          const ageSec = age;
+          const horiz = 1.6 * ageSec;
+          const vy0 = 1.8;
+          const dy = vy0 * ageSec - 4.0 * ageSec * ageSec; // simple parabola
+          r.flash.position.set(dx * horiz, dy, dz * horiz);
+          const s = 0.8 - t * 0.3;
+          r.flash.scale.set(s, s, s);
+          r.flashMat.opacity = (1 - t) * 0.85;
         } else {
           const s = 1 - t * 0.6;
           r.flash.scale.set(s, s, s);
@@ -541,7 +556,7 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
   return (
     <>
       {d.fx
-        .filter(f => f.type === 'bonk' || f.type === 'ko' || f.type === 'splash' || f.type === 'ripple' || f.type === 'bubble')
+        .filter(f => f.type === 'bonk' || f.type === 'ko' || f.type === 'splash' || f.type === 'ripple' || f.type === 'bubble' || f.type === 'sweat')
         .map(fx => {
           const ensure = (key: number) => {
             if (!refs.current.has(key)) refs.current.set(key, { ring: null, ringMat: null, flash: null, flashMat: null });
@@ -580,6 +595,20 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
                 >
                   <sphereGeometry args={[0.16, 12, 8]} />
                   <meshBasicMaterial color={flashColor} transparent opacity={0.75} depthWrite={false} blending={THREE.AdditiveBlending} />
+                </mesh>
+              </group>
+            );
+          }
+          // Sweat drop: small light-blue sphere anchored at the emitter
+          // chest height — the inner mesh animates the ballistic arc.
+          if (fx.type === 'sweat') {
+            return (
+              <group key={fx.key} position={[fx.x, fx.y ?? 1.0, fx.z]}>
+                <mesh
+                  ref={el => { const r = ensure(fx.key); r.flash = el; r.flashMat = el ? (el.material as THREE.MeshBasicMaterial) : null; }}
+                >
+                  <sphereGeometry args={[0.10, 10, 8]} />
+                  <meshStandardMaterial color="#9fc8e8" emissive="#cfe6f5" emissiveIntensity={0.6} transparent opacity={0.85} />
                 </mesh>
               </group>
             );
