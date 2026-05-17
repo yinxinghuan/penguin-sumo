@@ -8,36 +8,40 @@ export interface Stick {
   y: number; // -1..1
 }
 
-export interface BabyPenguin {
-  id: number;
-  position: THREE.Vector3;
-  colorType: number; // 0..7
-  vy: number; // for drop-from-sky bounce
-}
+export type PenguinState =
+  | 'idle'        // standing / walking, no charge
+  | 'charging'    // holding charge, walking slowly toward stick
+  | 'bursting'    // committed high-speed dash
+  | 'recover'     // brief input lock after a burst
+  | 'falling'     // KO'd, dropping out of the rink
+  | 'gone';       // fully off the field, hidden
 
-export interface BodySegment {
-  id: number;
-  position: THREE.Vector3;
-  rotation: number;
-  colorType: number;
-}
-
-export interface Iceberg {
+export interface SumoPenguin {
   id: string;
-  position: THREE.Vector3;
+  isPlayer: boolean;
+  aiIx: number;                   // index into AI_SPECS, -1 for player
+  position: THREE.Vector3;        // ground position (y=0 unless falling)
+  velocity: THREE.Vector3;        // horizontal velocity
+  rotation: number;               // facing direction in radians
+  state: PenguinState;
+  charge: number;                 // 0..1 — how filled the charge meter is
+  burstT: number;                 // seconds left in burst phase
+  recoverT: number;               // seconds left in recover phase
+  // AI scratchpad
+  approachTargetIx: number;       // which other penguin we're chasing right now
+  // Bookkeeping
+  lastImpactFrom: string | null;  // id of the last penguin that hit us
+  lastImpactAt: number;           // time of that hit (for KO_HISTORY_WINDOW)
+  fellOutAt: number;              // time when state became 'falling'
+  bodyColor: string;              // distinguishing body color
+  beltColor: string;              // mawashi belt color
 }
 
-export interface Seal {
-  id: number;
-  position: THREE.Vector3;
-  rotation: number;
-}
-
-export interface AssetMap {
-  texPenguinFace?: THREE.Texture;
-  texPenguinBody?: THREE.Texture;
-  texSkuaFace?: THREE.Texture;
-  texSkuaBody?: THREE.Texture;
-  texGround?: THREE.Texture;
-  texStartBg?: string;
+// Floating effect (bonk burst, KO splash, charge flash)
+export interface FxEvent {
+  key: number;
+  type: 'bonk' | 'splash' | 'ko' | 'charge';
+  x: number;
+  z: number;
+  born: number;
 }

@@ -1,55 +1,99 @@
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
-  PLAYFIELD, PLAYER_SPEED, SKUA_BASE_SPEED, ICEBERG_AVOID_RADIUS, INITIAL_ICEBERGS,
-  MAX_BABIES, SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX, CATCH_RADIUS, THREAT_HIT_RADIUS,
-  BODY_FOLLOW_SPEED, SEGMENT_SIZE_BOOST,
-  SEAL_SPAWN_INTERVAL, SEAL_MAX, SEAL_SPEED, SEAL_SPAWN_RADIUS,
-  SKUA_SCORE_SPEEDUP, SKUA_SCORE_CAP, COLOR_TYPES, SKUA_START,
-  GRACE_PERIOD,
+  ARENA_RADIUS, RING_OUT_RADIUS, PLAYER_RADIUS,
+  PLAYER_CHARGE_WALK, FRICTION,
+  CHARGE_TIME, CHARGE_MIN_THRESHOLD, BURST_MIN_SPEED, BURST_MAX_SPEED,
+  BURST_DURATION, DECAY_DURATION, RECOVER_AFTER_BURST,
+  COLLISION_ELASTICITY, IMPACT_BONK_MIN_SPEED, KO_HISTORY_WINDOW,
+  ROUND_TIME, KO_SCORE, SURVIVAL_PT_PER_SEC, ALL_DOWN_BONUS,
+  GRACE_PERIOD, AI_SPECS,
 } from '../constants';
-import type { BabyPenguin, BodySegment, Iceberg, Seal, Stick } from '../types';
+import type { SumoPenguin, FxEvent, Stick } from '../types';
+
+export type SfxKey = 'charge' | 'burst' | 'bonk' | 'ko' | 'tick' | 'cheer' | 'win' | 'fail';
 
 export interface GameRef {
-  headPos: THREE.Vector3;
-  headRot: number;
-  skuaPos: THREE.Vector3;
-  skuaRot: number;
-  babies: BabyPenguin[];
-  bodyParts: BodySegment[];
-  icebergs: Iceberg[];
-  seals: Seal[];
-  time: number;
+  penguins: SumoPenguin[];
+  time: number;            // total elapsed
+  timeLeft: number;        // round timer countdown
   score: number;
-  spawnTimer: number;
-  nextSpawnTime: number;
-  sealSpawnTimer: number;
-  lastChirpTime: number;
-  nextSkuaCryTime: number;
-  gameOver: boolean;
+  kos: number;             // KOs the player landed
   initialized: boolean;
+  gameOver: boolean;
+  // visual feedback queue (read by Scene, drained when consumed)
+  fx: FxEvent[];
+  // remember the previous stick state so we can detect press→release for burst
+  stickWasActive: boolean;
 }
 
 export function createGameState(): GameRef {
   return {
-    headPos: new THREE.Vector3(0, 0, 0),
-    headRot: 0,
-    skuaPos: new THREE.Vector3(...SKUA_START),
-    skuaRot: 0,
-    babies: [],
-    bodyParts: [],
-    icebergs: [],
-    seals: [],
+    penguins: [],
     time: 0,
+    timeLeft: ROUND_TIME,
     score: 0,
-    spawnTimer: 0,
-    nextSpawnTime: 0,
-    sealSpawnTimer: 0,
-    lastChirpTime: 0,
-    nextSkuaCryTime: 2,
-    gameOver: false,
+    kos: 0,
     initialized: false,
+    gameOver: false,
+    fx: [],
+    stickWasActive: false,
   };
+}
+
+function spawnInitial(d: GameRef) {
+  // Player at center-south, 3 AI evenly around them.
+  const player: SumoPenguin = {
+    id: 'player',
+    isPlayer: true,
+    aiIx: -1,
+    position: new THREE.Vector3(0, 0, ARENA_RADIUS * 0.55),
+    velocity: new THREE.Vector3(),
+    rotation: Math.PI, // facing north toward the others
+    state: 'idle',
+    charge: 0,
+    burstT: 0,
+    recoverT: 0,
+    approachTargetIx: -1,
+    lastImpactFrom: null,
+    lastImpactAt: -99,
+    fellOutAt: -1,
+    bodyColor: '#1a1a1a',
+    beltColor: '#d8453e', // red mawashi for the player — classic
+  };
+  d.penguins.push(player);
+  // Three AI in a triangle on the north half
+  const angles = [Math.PI * 1.20, Math.PI * 1.50, Math.PI * 1.80];
+  for (let i = 0; i < 3; i++) {
+    const spec = AI_SPECS[i % AI_SPECS.length];
+    const a = angles[i];
+    d.penguins.push({
+      id: `ai_${i}`,
+      isPlayer: false,
+      aiIx: i,
+      position: new THREE.Vector3(Math.cos(a) * ARENA_RADIUS * 0.55, 0, Math.sin(a) * ARENA_RADIUS * 0.55),
+      velocity: new THREE.Vector3(),
+      rotation: a + Math.PI, // face inward
+      state: 'idle',
+      charge: 0,
+      burstT: 0,
+      recoverT: 0,
+      approachTargetIx: -1,
+      lastImpactFrom: null,
+      lastImpactAt: -99,
+      fellOutAt: -1,
+      bodyColor: spec.bodyColor,
+      beltColor: spec.beltColor,
+    });
+  }
+}
+
+function emitFx(d: GameRef, type: FxEvent['type'], x: number, z: number) {
+  d.fx.push({ key: Math.random(), type, x, z, born: d.time });
+  // garbage-collect old fx (>2s) so the array doesn't grow forever
+  if (d.fx.length > 24) {
+    d.fx = d.fx.filter(f => d.time - f.born < 2);
+  }
 }
 
 export interface GameLoopParams {
@@ -57,261 +101,312 @@ export interface GameLoopParams {
   playing: boolean;
   stick: Stick;
   onScore: (s: number) => void;
-  onGameOver: (finalScore: number) => void;
-  onChainBroken?: (lostCount: number) => void;
-  playSfx: (key: 'chirp_short' | 'chirp_help' | 'chirp_happy' | 'skua_cry' | 'bonk' | 'game_over') => void;
-  haptic?: (kind: 'light' | 'heavy') => void;
+  onTime: (timeLeft: number) => void;
+  onKo: (totalKos: number) => void;
+  onGameOver: (final: number, won: boolean) => void;
+  onCharge: (charge: number) => void;
+  playSfx: (k: SfxKey) => void;
+  haptic?: (k: 'light' | 'heavy') => void;
 }
 
-export function useGameLoop({ state, playing, stick, onScore, onGameOver, onChainBroken, playSfx, haptic }: GameLoopParams) {
-  // Spawn icebergs whenever we encounter an uninitialized state (handles restart).
-  if (!state.current.initialized) {
-    const list: Iceberg[] = [];
-    let attempts = 0;
-    while (list.length < INITIAL_ICEBERGS && attempts < 100) {
-      attempts++;
-      const p = new THREE.Vector3(
-        (Math.random() - 0.5) * PLAYFIELD * 0.8,
-        0,
-        (Math.random() - 0.5) * PLAYFIELD * 0.8,
-      );
-      // keep player spawn area (origin) clear
-      if (p.length() < 4) continue;
-      let ok = true;
-      for (const o of list) {
-        if (p.distanceTo(o.position) < 5) { ok = false; break; }
-      }
-      if (ok) list.push({ id: `inner_${list.length}`, position: p });
-    }
-    // border ring of icebergs as visual wall
-    const r = PLAYFIELD / 2 + 2.5;
-    const ring = Math.floor((2 * Math.PI * r) / 2);
-    for (let i = 0; i < ring; i++) {
-      const a = (i / ring) * Math.PI * 2;
-      const jx = (Math.random() - 0.5) * 1.5;
-      const jz = (Math.random() - 0.5) * 1.5;
-      list.push({ id: `border_${i}`, position: new THREE.Vector3(Math.cos(a) * r + jx, 0, Math.sin(a) * r + jz) });
-    }
-    state.current.icebergs = list;
-    state.current.initialized = true;
+export function useGameLoop(p: GameLoopParams) {
+  if (!p.state.current.initialized) {
+    spawnInitial(p.state.current);
+    p.state.current.initialized = true;
   }
 
   useFrame((_, delta) => {
-    const d = state.current;
-    if (!playing || d.gameOver) return;
-    const c = Math.min(delta, 0.05); // clamp for stability
-
+    const d = p.state.current;
+    if (!p.playing || d.gameOver) return;
+    const c = Math.min(delta, 0.05);
     d.time += c;
-    d.spawnTimer += c;
+    d.timeLeft = Math.max(0, d.timeLeft - c);
+    p.onTime(d.timeLeft);
 
-    // ===== AUDIO CUES =====
-    if (d.time > d.lastChirpTime + 1.5) {
-      if (d.babies.length > 0 && Math.random() > 0.3) {
-        playSfx('chirp_help');
-        d.lastChirpTime = d.time + Math.random();
-      }
-      if (d.bodyParts.length > 0 && Math.random() > 0.4) {
-        playSfx('chirp_happy');
-        if (d.bodyParts.length > 5 && Math.random() > 0.5) {
-          setTimeout(() => playSfx('chirp_happy'), 200);
-        }
-        d.lastChirpTime = d.time;
-      }
-    }
-    if (d.time > d.nextSkuaCryTime) {
-      playSfx('skua_cry');
-      d.nextSkuaCryTime = d.time + 1 + Math.random() * 2;
-    }
+    const player = d.penguins.find(p => p.isPlayer);
+    if (!player) return;
 
-    // ===== PLAYER MOVEMENT =====
-    const playerSpeed = PLAYER_SPEED * (1 + d.bodyParts.length * SEGMENT_SIZE_BOOST);
-    if (stick.active) {
-      const dir = new THREE.Vector3(stick.x, 0, stick.y);
-      if (dir.length() > 0.1) {
-        d.headPos.addScaledVector(dir, playerSpeed * c);
-        d.headRot = Math.atan2(dir.x, dir.z);
-      }
-    }
-    // Original clamp: head can travel up to length PLAYFIELD*2 from origin —
-    // a much wider world than what's visible. The camera follows the player,
-    // so leaving the ice rink is allowed; you just lose the babies behind.
-    const maxLen = PLAYFIELD * 2;
-    if (d.headPos.length() > maxLen) d.headPos.setLength(maxLen);
+    // -----------------------------------------------------------------------
+    // PLAYER INPUT — charging while stick is held; burst on release.
+    // -----------------------------------------------------------------------
+    if (player.state !== 'falling' && player.state !== 'gone') {
+      const stickMag = Math.hypot(p.stick.x, p.stick.y);
+      const stickActive = p.stick.active && stickMag > 0.18;
 
-    // ===== BODY CHAIN FOLLOW =====
-    d.bodyParts.forEach((seg, i) => {
-      const target = i === 0 ? d.headPos : d.bodyParts[i - 1].position;
-      const diff = new THREE.Vector3().subVectors(target, seg.position);
-      diff.y = 0;
-      const distance = diff.length();
-      if (distance > 0.001) {
-        diff.normalize();
-        seg.position.addScaledVector(diff, BODY_FOLLOW_SPEED * c * Math.max(1, distance * 0.8));
-        seg.rotation = Math.atan2(diff.x, diff.z);
-      }
-    });
-
-    // ===== SKUA AI (homes onto player, hovers at y=3 above ice) =====
-    const skuaDir = new THREE.Vector3().subVectors(d.headPos, d.skuaPos);
-    skuaDir.y = 0;
-    if (skuaDir.length() > 0.001) skuaDir.normalize();
-    // avoid icebergs
-    const avoid = new THREE.Vector3(0, 0, 0);
-    for (const ice of d.icebergs) {
-      const off = new THREE.Vector3().subVectors(d.skuaPos, ice.position);
-      off.y = 0;
-      const dist = off.length();
-      if (dist < 1 + ICEBERG_AVOID_RADIUS && dist > 0.001) {
-        off.normalize();
-        const push = (1 + ICEBERG_AVOID_RADIUS - dist) * 5;
-        avoid.addScaledVector(off, push);
-      }
-    }
-    skuaDir.add(avoid);
-    if (skuaDir.length() > 0.001) skuaDir.normalize();
-    const skuaSpeed = SKUA_BASE_SPEED + Math.min(d.score * SKUA_SCORE_SPEEDUP, SKUA_SCORE_CAP);
-    d.skuaPos.addScaledVector(skuaDir, skuaSpeed * c);
-    d.skuaRot = Math.atan2(skuaDir.x, skuaDir.z);
-    // skua hover height bob — keeps the bird airborne above the ice
-    d.skuaPos.y = 3 + Math.sin(d.time * 2) * 0.4;
-
-    // ===== SPAWN BABIES =====
-    if (d.spawnTimer > d.nextSpawnTime && d.babies.length < MAX_BABIES) {
-      d.spawnTimer = 0;
-      d.nextSpawnTime = Math.random() * (SPAWN_INTERVAL_MAX - SPAWN_INTERVAL_MIN) + SPAWN_INTERVAL_MIN;
-      const r = PLAYFIELD / 2 - 2;
-      const a = Math.random() * Math.PI * 2;
-      const dist = Math.sqrt(Math.random()) * r;
-      d.babies.push({
-        id: Math.random(),
-        position: new THREE.Vector3(Math.cos(a) * dist, 15, Math.sin(a) * dist),
-        colorType: Math.floor(Math.random() * COLOR_TYPES),
-        vy: 0,
-      });
-    }
-    // baby drop physics
-    for (const b of d.babies) {
-      if (b.position.y > 0 || Math.abs(b.vy) > 0.1) {
-        b.vy -= 30 * c;
-        b.position.y += b.vy * c;
-        if (b.position.y < 0) {
-          b.position.y = 0;
-          b.vy = Math.abs(b.vy) > 2 ? -b.vy * 0.5 : 0;
-        }
-      }
-    }
-
-    // ===== PICKUP =====
-    for (let i = d.babies.length - 1; i >= 0; i--) {
-      const baby = d.babies[i];
-      if (baby.position.y > 0.5) continue; // wait until on ground
-      const dx = baby.position.x - d.headPos.x;
-      const dz = baby.position.z - d.headPos.z;
-      if (Math.sqrt(dx * dx + dz * dz) < CATCH_RADIUS) {
-        playSfx('chirp_short');
-        haptic?.('light');
-        d.score += 1;
-        onScore(d.score);
-        d.bodyParts.push({
-          id: baby.id,
-          position: baby.position.clone(),
-          rotation: 0,
-          colorType: baby.colorType,
-        });
-        d.bodyParts[d.bodyParts.length - 1].position.y = 0;
-        d.babies.splice(i, 1);
-      }
-    }
-
-    // ===== SEAL SPAWN + AI =====
-    d.sealSpawnTimer += c;
-    if (d.sealSpawnTimer > SEAL_SPAWN_INTERVAL && d.seals.length < SEAL_MAX) {
-      d.sealSpawnTimer = 0;
-      const a = Math.random() * Math.PI * 2;
-      d.seals.push({
-        id: Math.random(),
-        position: new THREE.Vector3(Math.cos(a) * SEAL_SPAWN_RADIUS, 0, Math.sin(a) * SEAL_SPAWN_RADIUS),
-        rotation: 0,
-      });
-    }
-    for (const seal of d.seals) {
-      const dir = new THREE.Vector3().subVectors(d.headPos, seal.position);
-      dir.y = 0;
-      if (dir.length() > 0.001) {
-        dir.normalize();
-        seal.position.addScaledVector(dir, SEAL_SPEED * c);
-        seal.rotation = Math.atan2(dir.x, dir.z);
-      }
-    }
-
-    // ===== SEAL HIT (score reset, drop the babies) =====
-    const headGround = new THREE.Vector3(d.headPos.x, 0, d.headPos.z);
-    if (d.time > GRACE_PERIOD) for (let i = d.seals.length - 1; i >= 0; i--) {
-      const sp = d.seals[i].position;
-      const sealGround = new THREE.Vector3(sp.x, 0, sp.z);
-      let hit = sealGround.distanceTo(headGround) < THREAT_HIT_RADIUS;
-      if (!hit) {
-        for (const seg of d.bodyParts) {
-          if (sealGround.distanceTo(new THREE.Vector3(seg.position.x, 0, seg.position.z)) < THREAT_HIT_RADIUS) {
-            hit = true;
-            break;
+      if (player.state === 'idle' || player.state === 'charging') {
+        if (stickActive) {
+          // Aim
+          player.rotation = Math.atan2(p.stick.x, p.stick.y);
+          // Build charge
+          player.charge = Math.min(1, player.charge + c / CHARGE_TIME);
+          if (player.state === 'idle') {
+            player.state = 'charging';
+            p.playSfx('charge');
           }
-        }
-      }
-      if (hit) {
-        playSfx('bonk');
-        haptic?.('heavy');
-        // Lose a RANDOM PORTION of the chain — 40-75% of the current length,
-        // always at least 1. The back of the chain (furthest from the leader)
-        // takes the hit; the front stays attached. Lets a long chain survive
-        // a seal hit without zeroing the run.
-        const chainLen = d.bodyParts.length;
-        if (chainLen > 0) {
-          const fraction = 0.4 + Math.random() * 0.35;
-          const lostCount = Math.min(chainLen, Math.max(1, Math.ceil(chainLen * fraction)));
-          const lost = d.bodyParts.splice(d.bodyParts.length - lostCount, lostCount);
-          // launch each lost segment back as a stray baby
-          for (const seg of lost) {
-            const a = Math.random() * Math.PI * 2;
-            const launch = 5;
-            d.babies.push({
-              id: Math.random(),
-              position: new THREE.Vector3(
-                seg.position.x + Math.cos(a) * launch,
-                seg.position.y,
-                seg.position.z + Math.sin(a) * launch,
-              ),
-              colorType: seg.colorType,
-              vy: Math.random() * 15 + 10,
-            });
+          // Slow walk while charging
+          const walkSpeed = PLAYER_CHARGE_WALK * (1 - player.charge * 0.35);
+          player.velocity.set(
+            (p.stick.x / Math.max(stickMag, 0.01)) * walkSpeed,
+            0,
+            (p.stick.y / Math.max(stickMag, 0.01)) * walkSpeed,
+          );
+          p.onCharge(player.charge);
+        } else {
+          // No stick — if we were charging, release the burst now
+          if (player.state === 'charging' && player.charge > CHARGE_MIN_THRESHOLD) {
+            const speed = BURST_MIN_SPEED + (BURST_MAX_SPEED - BURST_MIN_SPEED) * player.charge;
+            player.velocity.set(Math.sin(player.rotation) * speed, 0, Math.cos(player.rotation) * speed);
+            player.state = 'bursting';
+            player.burstT = BURST_DURATION + DECAY_DURATION;
+            p.playSfx('burst');
+            p.haptic?.('light');
+            emitFx(d, 'charge', player.position.x, player.position.z);
+          } else {
+            player.state = 'idle';
           }
-          d.score = Math.max(0, d.score - lostCount);
-          onScore(d.score);
-          onChainBroken?.(lostCount);
+          player.charge = 0;
+          p.onCharge(0);
         }
-        d.seals.splice(i, 1);
+      } else if (player.state === 'bursting') {
+        player.burstT -= c;
+        // velocity decays through the burst phase — linear ramp from burst speed
+        // down to ~zero over the full window
+        const decayMul = Math.max(0, player.burstT / (BURST_DURATION + DECAY_DURATION));
+        player.velocity.multiplyScalar(0.5 + 0.5 * Math.pow(decayMul, 0.4));
+        if (player.burstT <= 0) {
+          player.state = 'recover';
+          player.recoverT = RECOVER_AFTER_BURST;
+        }
+      } else if (player.state === 'recover') {
+        player.recoverT -= c;
+        if (player.recoverT <= 0) player.state = 'idle';
       }
     }
 
-    // ===== ORCA HIT (GAME OVER) =====
-    // 1.5s grace period (workspace CLAUDE.md rule): no death judgment right after start.
-    const skuaGround = new THREE.Vector3(d.skuaPos.x, 0, d.skuaPos.z);
-    const endGame = () => {
-      if (d.gameOver) return;
-      d.gameOver = true;
-      playSfx('bonk');
-      playSfx('game_over');
-      haptic?.('heavy');
-      onGameOver(d.score);
-    };
+    d.stickWasActive = p.stick.active;
+
+    // -----------------------------------------------------------------------
+    // AI — for each non-player penguin, run a short state machine.
+    // -----------------------------------------------------------------------
+    for (const peng of d.penguins) {
+      if (peng.isPlayer) continue;
+      if (peng.state === 'falling' || peng.state === 'gone') continue;
+      const spec = AI_SPECS[peng.aiIx];
+      // Pick a target each tick — nearest non-fallen penguin that isn't us
+      let bestDist = Infinity;
+      let target: SumoPenguin | null = null;
+      for (const other of d.penguins) {
+        if (other === peng) continue;
+        if (other.state === 'falling' || other.state === 'gone') continue;
+        const dx = other.position.x - peng.position.x;
+        const dz = other.position.z - peng.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < bestDist) { bestDist = dist; target = other; }
+      }
+      if (!target) continue;
+
+      if (peng.state === 'idle') {
+        // start approaching immediately
+        peng.state = 'charging';
+        peng.charge = 0;
+      }
+
+      if (peng.state === 'charging') {
+        const dx = target.position.x - peng.position.x;
+        const dz = target.position.z - peng.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        // Move toward target — modulated by edge-avoidance so cautious AIs don't
+        // run themselves off the edge while chasing.
+        const myR = Math.hypot(peng.position.x, peng.position.z);
+        const edgePush = new THREE.Vector3(0, 0, 0);
+        if (myR > ARENA_RADIUS * 0.85) {
+          edgePush.set(-peng.position.x, 0, -peng.position.z).normalize();
+          edgePush.multiplyScalar(spec.edgeAvoidance);
+        }
+        const desire = new THREE.Vector3(dx, 0, dz);
+        if (desire.length() > 0.01) desire.normalize();
+        desire.add(edgePush);
+        if (desire.length() > 0.01) desire.normalize();
+        const walkSpeed = spec.approachSpeed * (1 - peng.charge * 0.30);
+        peng.velocity.set(desire.x * walkSpeed, 0, desire.z * walkSpeed);
+        peng.rotation = Math.atan2(desire.x, desire.z);
+
+        // Fill charge
+        peng.charge = Math.min(1, peng.charge + c / spec.chargeTime);
+
+        // Release burst when fully charged AND target is within trigger range
+        if (peng.charge >= 0.98 && dist <= spec.triggerRange) {
+          // Aim at target's CURRENT position (no lead — easier on the player)
+          const aim = new THREE.Vector3(dx, 0, dz).normalize();
+          const speed = spec.burstSpeed;
+          peng.velocity.set(aim.x * speed, 0, aim.z * speed);
+          peng.rotation = Math.atan2(aim.x, aim.z);
+          peng.state = 'bursting';
+          peng.burstT = BURST_DURATION + DECAY_DURATION;
+          peng.charge = 0;
+        }
+      } else if (peng.state === 'bursting') {
+        peng.burstT -= c;
+        const decayMul = Math.max(0, peng.burstT / (BURST_DURATION + DECAY_DURATION));
+        peng.velocity.multiplyScalar(0.5 + 0.5 * Math.pow(decayMul, 0.4));
+        if (peng.burstT <= 0) {
+          peng.state = 'recover';
+          peng.recoverT = spec.recoverTime;
+        }
+      } else if (peng.state === 'recover') {
+        peng.recoverT -= c;
+        if (peng.recoverT <= 0) peng.state = 'charging';
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // INTEGRATE — apply velocity to positions; apply friction for idle bodies.
+    // -----------------------------------------------------------------------
+    for (const peng of d.penguins) {
+      if (peng.state === 'falling') {
+        // Drop animation — position keeps drifting outward + y falls
+        peng.position.x += peng.velocity.x * c;
+        peng.position.z += peng.velocity.z * c;
+        peng.position.y -= 4 * c + Math.max(0, (d.time - peng.fellOutAt) * 1.6);
+        if (peng.position.y < -3) {
+          peng.state = 'gone';
+        }
+        continue;
+      }
+      if (peng.state === 'gone') continue;
+
+      peng.position.x += peng.velocity.x * c;
+      peng.position.z += peng.velocity.z * c;
+
+      // Friction (only outside of burst state)
+      if (peng.state !== 'bursting') {
+        peng.velocity.x *= Math.exp(-FRICTION * c);
+        peng.velocity.z *= Math.exp(-FRICTION * c);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // COLLISIONS — pair-wise body checks; momentum exchange along the normal.
+    // -----------------------------------------------------------------------
+    for (let i = 0; i < d.penguins.length; i++) {
+      const a = d.penguins[i];
+      if (a.state === 'falling' || a.state === 'gone') continue;
+      for (let j = i + 1; j < d.penguins.length; j++) {
+        const b = d.penguins[j];
+        if (b.state === 'falling' || b.state === 'gone') continue;
+
+        const dx = a.position.x - b.position.x;
+        const dz = a.position.z - b.position.z;
+        const dist = Math.hypot(dx, dz);
+        const minDist = PLAYER_RADIUS * 2;
+        if (dist >= minDist || dist < 0.0001) continue;
+
+        // Separate so they don't overlap
+        const overlap = minDist - dist;
+        const nx = dx / dist;
+        const nz = dz / dist;
+        a.position.x += nx * overlap * 0.5;
+        a.position.z += nz * overlap * 0.5;
+        b.position.x -= nx * overlap * 0.5;
+        b.position.z -= nz * overlap * 0.5;
+
+        // Velocity along the contact normal
+        const v1n = a.velocity.x * nx + a.velocity.z * nz;
+        const v2n = b.velocity.x * nx + b.velocity.z * nz;
+        const approach = v1n - v2n;
+        if (approach > 0) continue; // already separating
+        // Elastic-ish exchange with restitution
+        const delta = (v1n - v2n) * (1 + COLLISION_ELASTICITY) / 2;
+        a.velocity.x -= delta * nx;
+        a.velocity.z -= delta * nz;
+        b.velocity.x += delta * nx;
+        b.velocity.z += delta * nz;
+
+        // Bookkeeping: which side hit harder? Track that for KO attribution.
+        const closingSpeed = Math.abs(approach);
+        if (closingSpeed >= IMPACT_BONK_MIN_SPEED) {
+          // The penguin moving faster INTO the contact is the "attacker"
+          const aIntoB = v1n < v2n; // a's vel along n is more negative → a moves into b
+          if (aIntoB) {
+            b.lastImpactFrom = a.id;
+            b.lastImpactAt = d.time;
+          } else {
+            a.lastImpactFrom = b.id;
+            a.lastImpactAt = d.time;
+          }
+          // bonk feedback at midpoint
+          const mx = (a.position.x + b.position.x) / 2;
+          const mz = (a.position.z + b.position.z) / 2;
+          emitFx(d, 'bonk', mx, mz);
+          p.playSfx('bonk');
+          if (a.isPlayer || b.isPlayer) p.haptic?.('heavy');
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // RING-OUT — anyone outside RING_OUT_RADIUS starts falling.
+    // -----------------------------------------------------------------------
     if (d.time > GRACE_PERIOD) {
-      if (skuaGround.distanceTo(headGround) < THREAT_HIT_RADIUS) endGame();
-      for (const seg of d.bodyParts) {
-        if (skuaGround.distanceTo(new THREE.Vector3(seg.position.x, 0, seg.position.z)) < THREAT_HIT_RADIUS) {
-          endGame();
-          break;
+      for (const peng of d.penguins) {
+        if (peng.state === 'falling' || peng.state === 'gone') continue;
+        const r = Math.hypot(peng.position.x, peng.position.z);
+        if (r > RING_OUT_RADIUS) {
+          peng.state = 'falling';
+          peng.fellOutAt = d.time;
+          emitFx(d, 'splash', peng.position.x, peng.position.z);
+          p.playSfx('ko');
+          // Score attribution — was a recent hit responsible?
+          const recent = d.time - peng.lastImpactAt < KO_HISTORY_WINDOW;
+          if (recent && peng.lastImpactFrom) {
+            const hitter = d.penguins.find(x => x.id === peng.lastImpactFrom);
+            if (hitter?.isPlayer && !peng.isPlayer) {
+              d.kos += 1;
+              d.score += KO_SCORE;
+              p.onScore(d.score);
+              p.onKo(d.kos);
+              p.playSfx('cheer');
+              emitFx(d, 'ko', peng.position.x, peng.position.z);
+            }
+          }
         }
       }
+    }
+
+    // -----------------------------------------------------------------------
+    // SCORE — running survival bonus per second the player is still in.
+    // -----------------------------------------------------------------------
+    if (player.state !== 'falling' && player.state !== 'gone') {
+      d.score += SURVIVAL_PT_PER_SEC * c;
+      p.onScore(d.score);
+    }
+
+    // -----------------------------------------------------------------------
+    // WIN / LOSE
+    // -----------------------------------------------------------------------
+    const alive = d.penguins.filter(x => x.state !== 'falling' && x.state !== 'gone');
+    const playerAlive = alive.some(x => x.isPlayer);
+    const aiAlive = alive.some(x => !x.isPlayer);
+
+    if (!playerAlive && !d.gameOver) {
+      d.gameOver = true;
+      p.playSfx('fail');
+      setTimeout(() => p.onGameOver(Math.floor(d.score), false), 600);
+      return;
+    }
+    if (!aiAlive && playerAlive && !d.gameOver) {
+      d.gameOver = true;
+      d.score += ALL_DOWN_BONUS;
+      p.onScore(d.score);
+      p.playSfx('win');
+      setTimeout(() => p.onGameOver(Math.floor(d.score), true), 600);
+      return;
+    }
+    if (d.timeLeft <= 0 && !d.gameOver) {
+      d.gameOver = true;
+      p.playSfx(playerAlive ? 'win' : 'fail');
+      setTimeout(() => p.onGameOver(Math.floor(d.score), playerAlive), 600);
+      return;
     }
   });
 }

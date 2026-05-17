@@ -98,7 +98,7 @@ export function SplashScene({ onStart, highScore }: { onStart: () => void; highS
       <div className="ps-splash__content">
         <h1 className="ps-splash__title">
           <span className="ps-splash__title-emph">Penguin</span>
-          <span className="ps-splash__title-emph ps-splash__title-emph--accent">Rescue</span>
+          <span className="ps-splash__title-emph ps-splash__title-emph--accent">Sumo</span>
         </h1>
         <p className="ps-splash__subtitle">{t('subtitle')}</p>
 

@@ -1,7 +1,6 @@
 type Locale = 'zh' | 'en';
 
 function detectLocale(): Locale {
-  // Default to English. Players can opt into Chinese via localStorage.
   const override = localStorage.getItem('game_locale');
   if (override === 'en' || override === 'zh') return override;
   return 'en';
@@ -10,31 +9,29 @@ function detectLocale(): Locale {
 const dict: Record<Locale, Record<string, string>> = {
   zh: {
     title: 'Penguin Sumo',
-    subtitle: '南极冰原。一群走失的小企鹅。一只盯着你的贼鸥。',
-    tap_to_start: '开始营救',
-    rescued: '救出了 {n} 只小企鹅',
-    again: '再次挑战',
+    subtitle: '冰上擂台 · 把对手撞下水',
+    tap_to_start: '入场',
+    again: '再来一回',
     score: '得分',
     high: '最高',
-    loading: '努力加载中...',
+    loading: '加载中…',
     leaderboard: '排行榜',
-    rule_collect: '触碰小企鹅，连成长队',
-    rule_dodge:   '贼鸥从天上俯冲，碰到就 game over',
-    rule_control: '按住屏幕任意位置拖动 = 摇杆',
+    rule_charge: '按住摇杆蓄力 → 松手猛冲',
+    rule_push:   '撞掉 3 个对手，或撑到时间结束',
+    rule_avoid:  '别冲出冰圈',
   },
   en: {
     title: 'Penguin Sumo',
-    subtitle: 'SAVE THE BABIES · DODGE THE SKUA',
-    tap_to_start: 'Start rescue',
-    rescued: 'Rescued {n} babies',
-    again: 'Try again',
+    subtitle: 'PUSH RIVALS OFF THE ICE',
+    tap_to_start: 'Step onto the ring',
+    again: 'Rematch',
     score: 'Score',
     high: 'Best',
     loading: 'Loading…',
     leaderboard: 'Leaderboard',
-    rule_collect: 'Touch babies to chain them behind you',
-    rule_dodge:   'Skua dives from above — one hit, game over',
-    rule_control: 'Hold + drag anywhere = joystick',
+    rule_charge: 'Hold the stick to charge · release to dash',
+    rule_push:   'KO all 3 rivals — or survive the bout',
+    rule_avoid:  "Don't dash off the rink",
   },
 };
 

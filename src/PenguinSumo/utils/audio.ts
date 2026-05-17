@@ -1,12 +1,8 @@
-// Penguin Sumo audio — cheerful synth BGM + procedural SFX. Same public
-// API as before (unlockAudio / playSfx / startBgm / stopBgm), so callers
-// don't move. The drone-with-swell pattern got replaced by a 16-step
-// pentatonic melody at 105 BPM with a bouncy synth arp, a warm sine bass,
-// and a periodic bell tinkle — light "ice-rink Saturday" energy.
+// Penguin Sumo audio — taiko-flavored synth BGM + sumo-themed SFX. The
+// game-loop dispatches its own SfxKey set: charge / burst / bonk / ko / tick /
+// cheer / win / fail.
 
-type SfxKey =
-  | 'chirp_short' | 'chirp_help' | 'chirp_happy'
-  | 'skua_cry'    | 'bonk'       | 'game_over';
+type SfxKey = 'charge' | 'burst' | 'bonk' | 'ko' | 'tick' | 'cheer' | 'win' | 'fail';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -33,7 +29,6 @@ export async function unlockAudio() {
   if (c && c.state === 'suspended') await c.resume();
 }
 
-// ---------- helpers ----------
 function envelope(node: GainNode, peak: number, attack: number, decay: number, t0: number) {
   node.gain.setValueAtTime(0, t0);
   node.gain.linearRampToValueAtTime(peak, t0 + attack);
@@ -53,7 +48,7 @@ function tone(freq: number, type: OscillatorType, dur: number, peak: number, t0:
   osc.stop(t0 + dur + 0.05);
 }
 
-function noise(dur: number, peak: number, t0: number, lp = 2000) {
+function noise(dur: number, peak: number, t0: number, lp = 2000, dst?: AudioNode) {
   if (!ctx || !master) return;
   const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
   const data = buf.getChannelData(0);
@@ -65,103 +60,103 @@ function noise(dur: number, peak: number, t0: number, lp = 2000) {
   filt.frequency.value = lp;
   const g = ctx.createGain();
   envelope(g, peak, 0.005, dur, t0);
-  src.connect(filt).connect(g).connect(master);
+  src.connect(filt).connect(g).connect(dst ?? master);
   src.start(t0);
   src.stop(t0 + dur + 0.05);
 }
 
-// ---------- SFX ----------
+// Taiko drum hit — short sub-thump + transient noise. Doubles as the BGM kick.
+function taiko(t: number, peak = 0.5, freq = 90, dst?: AudioNode) {
+  if (!ctx || !master) return;
+  const o = ctx.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq, t);
+  o.frequency.exponentialRampToValueAtTime(freq * 0.4, t + 0.18);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + 0.30);
+  o.connect(g).connect(dst ?? master);
+  o.start(t);
+  o.stop(t + 0.32);
+  noise(0.020, peak * 0.35, t, 3000, dst);
+}
+
 export function playSfx(key: SfxKey) {
   const c = ensureCtx();
   if (!c || !master) return;
   if (c.state === 'suspended') c.resume();
   const t = c.currentTime;
   switch (key) {
-    case 'chirp_short':
-      tone(1600, 'square', 0.08, 0.18, t, 1300);
-      tone(2100, 'square', 0.06, 0.10, t + 0.02, 1700);
+    case 'charge':
+      // Rising sweep — "engine spinning up"
+      tone(220, 'sawtooth', 0.30, 0.18, t, 520);
       break;
-    case 'chirp_help':
-      tone(900, 'sawtooth', 0.18, 0.16, t, 600);
-      tone(1100, 'triangle', 0.16, 0.10, t + 0.06, 750);
-      break;
-    case 'chirp_happy':
-      tone(1400, 'square', 0.08, 0.16, t, 1900);
-      tone(1900, 'square', 0.08, 0.16, t + 0.10, 2300);
-      break;
-    case 'skua_cry':
-      tone(1800, 'square', 0.08, 0.18, t,        1400);
-      tone(1400, 'square', 0.18, 0.22, t + 0.06,  800);
-      tone( 900, 'sawtooth', 0.14, 0.16, t + 0.18, 600);
-      noise(0.20, 0.05, t + 0.02, 4000);
+    case 'burst':
+      // Whoosh release — saw sweep down + noise tail
+      tone(640, 'sawtooth', 0.18, 0.30, t, 180);
+      noise(0.22, 0.18, t, 2400);
       break;
     case 'bonk':
-      tone(140, 'sine', 0.22, 0.35, t, 50);
-      noise(0.18, 0.20, t, 1500);
+      // Body slam — fat taiko + crunch
+      taiko(t, 0.55, 110);
+      noise(0.10, 0.22, t, 1400);
+      tone(180, 'square', 0.10, 0.18, t + 0.01, 60);
       break;
-    case 'game_over':
+    case 'ko':
+      // SPLASH ring-out — descending whoosh + low thud
+      tone(800, 'sawtooth', 0.30, 0.20, t, 120);
+      noise(0.35, 0.30, t, 1800);
+      tone(70, 'sine', 0.40, 0.30, t + 0.04, 40);
+      break;
+    case 'tick':
+      tone(2200, 'square', 0.04, 0.10, t, 2200);
+      break;
+    case 'cheer':
+      tone(880, 'triangle', 0.10, 0.20, t, 1320);
+      tone(1320, 'triangle', 0.16, 0.22, t + 0.06, 1760);
+      tone(1760, 'triangle', 0.20, 0.20, t + 0.14, 2200);
+      break;
+    case 'win':
+      tone(440, 'triangle', 0.22, 0.30, t,        660);
+      tone(660, 'triangle', 0.22, 0.30, t + 0.20, 880);
+      tone(880, 'triangle', 0.40, 0.30, t + 0.40, 1320);
+      taiko(t + 0.5, 0.7, 80);
+      break;
+    case 'fail':
       tone(660, 'triangle', 0.30, 0.22, t,          440);
-      tone(440, 'triangle', 0.30, 0.22, t + 0.20,   330);
-      tone(330, 'triangle', 0.45, 0.22, t + 0.40,   180);
+      tone(440, 'triangle', 0.30, 0.22, t + 0.22,   330);
+      tone(330, 'triangle', 0.50, 0.22, t + 0.44,   180);
+      taiko(t + 0.7, 0.4, 60);
       break;
   }
 }
 
-// ---------- BGM ----------
-//
-// 105 BPM, 16th-note grid, 16-step phrase (one bar). Four voices:
-//   • Lead       — triangle, pentatonic melody, walks across the phrase
-//   • Arp        — square, bouncy 8th-note arpeggio (high octave)
-//   • Bass       — sine pulse on beats 1, 5, 9, 13 with a subtle pitch drop
-//   • Bell       — high triangle ping every 4 beats (icy sparkle)
-//
-// Key: D major pentatonic — D E F# A B. Cheerful but not sugary.
-// Subtle short-delay feedback bus glues the voices into one room.
+// BGM — taiko-flavored bouncy loop. 110 BPM, 16th-note grid, 16-step phrase.
+// I — VI — IV — V across 4 bars. Festival vibe, kept under SFX threshold.
 
-const BGM_BPM = 105;
-const STEP_T = 60 / BGM_BPM / 4;           // 16th-note duration
-const BAR = 16;                            // 16 16ths per bar
-const PHRASE_BARS = 4;                     // melody varies across 4 bars
+const BGM_BPM = 110;
+const STEP_T = 60 / BGM_BPM / 4;
+const BAR = 16;
+const PHRASE_BARS = 4;
+const ROOT_MIDI = 50; // D3
 
-// Semitone offsets from D2 (root). D major pentatonic = 0, 2, 4, 7, 9.
-const ROOT_MIDI = 38;                      // D2
-
-// Lead melody — 4 bars × 16 steps. -1 = rest. Values are semitones above D5.
-const LEAD: number[] = [
-  // bar 1  D  .  F# A  .  D  E  .  F# A  .  E  D  .  .  .
-              0, -1, 4, 7, -1, 0, 2, -1, 4, 7, -1, 2, 0, -1, -1, -1,
-  // bar 2  E  .  F# B  .  E  F# .  A  B  .  F# E  .  .  .
-              2, -1, 4, 11, -1, 2, 4, -1, 7, 11, -1, 4, 2, -1, -1, -1,
-  // bar 3  D  E  F# A  E  D  E  F# A  G  E  D  .  E  .  D
-              0,  2, 4, 7, 2, 0, 2, 4, 7, -1, 2, 0, -1, 2, -1, 0,
-  // bar 4  F# .  A  G  E  D  .  .  D  .  .  .  .  .  .  .
-              4, -1, 7, -1, 2, 0, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1,
-];
-// Lead is in the upper octave (add 12 semitones when used).
-
-// Arp — same length, pentatonic notes high above. Drives the bounce.
-const ARP: number[] = [
-  // octave 5 pentatonic spread, 8th-note shuffle
-   12, 16, 19, 16,  12, 16, 19, 16,  14, 19, 21, 19,  14, 19, 21, 19,
-   16, 19, 21, 19,  16, 19, 21, 23,  12, 19, 16, 19,  12, 14, 16, 19,
-   12, 16, 19, 23,  19, 16, 12, 16,  14, 19, 16, 21,  19, 14, 12, 19,
-   16, 14, 12, 16,  19, 14, 12, 19,  16, 14, 12, 14,  16, 19, 16, 12,
+const MELODY: number[] = [
+  // bar 1 — D walks up
+   0, -1,  4, -1,  7, -1,  4, -1,   9, -1,  7,  4,  2, -1, -1, -1,
+  // bar 2 — Bm
+   2, -1,  7, -1, 12, -1,  9, -1,   7, -1, 12,  9,  7, -1, -1, -1,
+  // bar 3 — G
+   5, -1,  9, -1, 12, -1,  9, -1,  14, -1, 12,  9,  5, -1, -1, -1,
+  // bar 4 — A (V) → resolve
+   7, -1, 11, -1, 14, -1, 11, -1,   9,  7,  5,  4,  2,  0, -1, -1,
 ];
 
-// Bass — root and IV alternating across the phrase
 const BASS_PATTERN: { step: number; smOffset: number }[] = [
-  // bar 1: I (D)
-  { step: 0,  smOffset: 0 },  { step: 4,  smOffset: 0 },
-  { step: 8,  smOffset: 0 },  { step: 12, smOffset: 0 },
-  // bar 2: I
-  { step: 16, smOffset: 0 },  { step: 20, smOffset: 0 },
-  { step: 24, smOffset: 0 },  { step: 28, smOffset: 0 },
-  // bar 3: IV (G)
-  { step: 32, smOffset: 5 },  { step: 36, smOffset: 5 },
-  { step: 40, smOffset: 5 },  { step: 44, smOffset: 5 },
-  // bar 4: I → V resolution
-  { step: 48, smOffset: 0 },  { step: 52, smOffset: 0 },
-  { step: 56, smOffset: 7 },  { step: 60, smOffset: 0 },
+  { step: 0,  smOffset: 0 },  { step: 8,  smOffset: 0 },
+  { step: 16, smOffset: -3 }, { step: 24, smOffset: -3 },
+  { step: 32, smOffset: -7 }, { step: 40, smOffset: -7 },
+  { step: 48, smOffset: -5 }, { step: 56, smOffset: -5 },
 ];
 
 let bgmRunning = false;
@@ -173,45 +168,34 @@ function midiToHz(sm: number): number {
   return 440 * Math.pow(2, (ROOT_MIDI + sm - 69) / 12);
 }
 
-function pluckTri(freq: number, t: number, dur: number, peak: number, dst?: AudioNode) {
+function pluckMarimba(freq: number, t: number, dur: number, peak: number, dst?: AudioNode) {
   if (!ctx || !bgmGain) return;
-  const o = ctx.createOscillator();
-  o.type = 'triangle';
-  o.frequency.setValueAtTime(freq, t);
+  const dest = dst ?? bgmGain;
+  const o1 = ctx.createOscillator();
+  o1.type = 'triangle';
+  o1.frequency.setValueAtTime(freq, t);
+  const o2 = ctx.createOscillator();
+  o2.type = 'sine';
+  o2.frequency.setValueAtTime(freq * 2, t);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(peak, t + 0.012);
+  g.gain.linearRampToValueAtTime(peak, t + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-  o.connect(g).connect(dst ?? bgmGain);
-  o.start(t);
-  o.stop(t + dur + 0.05);
-}
-
-function pluckSquare(freq: number, t: number, dur: number, peak: number, dst?: AudioNode) {
-  if (!ctx || !bgmGain) return;
-  const o = ctx.createOscillator();
-  o.type = 'square';
-  o.frequency.setValueAtTime(freq, t);
-  // gentle lowpass so the square doesn't bite
-  const filt = ctx.createBiquadFilter();
-  filt.type = 'lowpass';
-  filt.frequency.value = 2400;
-  filt.Q.value = 0.7;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(peak, t + 0.006);
-  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-  o.connect(filt).connect(g).connect(dst ?? bgmGain);
-  o.start(t);
-  o.stop(t + dur + 0.05);
+  const g2 = ctx.createGain();
+  g2.gain.value = 0.30;
+  o1.connect(g);
+  o2.connect(g2).connect(g);
+  g.connect(dest);
+  o1.start(t); o1.stop(t + dur + 0.05);
+  o2.start(t); o2.stop(t + dur + 0.05);
 }
 
 function bassSine(freq: number, t: number, dur: number, peak: number) {
   if (!ctx || !bgmGain) return;
   const o = ctx.createOscillator();
   o.type = 'sine';
-  o.frequency.setValueAtTime(freq * 1.04, t);
-  o.frequency.exponentialRampToValueAtTime(freq, t + 0.06);
+  o.frequency.setValueAtTime(freq * 1.03, t);
+  o.frequency.exponentialRampToValueAtTime(freq, t + 0.05);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(peak, t + 0.02);
@@ -221,65 +205,56 @@ function bassSine(freq: number, t: number, dur: number, peak: number) {
   o.stop(t + dur + 0.05);
 }
 
-function bellPing(freq: number, t: number, peak: number, dst?: AudioNode) {
-  // Bell = stacked sine (fundamental + inharmonic 2.76 partial) with very
-  // short attack and long exponential decay. Sounds icy and sparkly.
-  if (!ctx || !bgmGain) return;
-  const dest = dst ?? bgmGain;
-  const o1 = ctx.createOscillator();
-  o1.type = 'sine';
-  o1.frequency.setValueAtTime(freq, t);
-  const o2 = ctx.createOscillator();
-  o2.type = 'sine';
-  o2.frequency.setValueAtTime(freq * 2.76, t);
+function chat(t: number, peak: number, dst?: AudioNode) {
+  if (!ctx || !master) return;
+  const buf = ctx.createBuffer(1, Math.max(1, Math.ceil(ctx.sampleRate * 0.025)), ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filt = ctx.createBiquadFilter();
+  filt.type = 'bandpass';
+  filt.frequency.value = 7500;
+  filt.Q.value = 1.0;
   const g = ctx.createGain();
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(peak, t + 0.004);
-  g.gain.exponentialRampToValueAtTime(0.0008, t + 1.2);
-  const g2 = ctx.createGain();
-  g2.gain.value = 0.35; // inharmonic partial quieter
-  o1.connect(g);
-  o2.connect(g2).connect(g);
-  g.connect(dest);
-  o1.start(t); o1.stop(t + 1.3);
-  o2.start(t); o2.stop(t + 1.3);
+  g.gain.linearRampToValueAtTime(peak, t + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+  src.connect(filt).connect(g).connect(dst ?? master);
+  src.start(t);
+  src.stop(t + 0.045);
 }
 
 function scheduleBgmAhead() {
   if (!ctx || !bgmRunning || !bgmGain || !bgmFx) return;
-  const horizon = ctx.currentTime + 0.5;
+  const horizon = ctx.currentTime + 0.4;
   while (bgmNextStepT < horizon) {
-    const stepInPhrase = bgmStep % (BAR * PHRASE_BARS);   // 0..63
-    const stepInBar = bgmStep % BAR;                       // 0..15
+    const stepInPhrase = bgmStep % (BAR * PHRASE_BARS);
+    const stepInBar = bgmStep % BAR;
     const t = bgmNextStepT;
 
-    // LEAD — triangle melody, upper octave
-    const lead = LEAD[stepInPhrase];
-    if (lead >= 0) {
-      pluckTri(midiToHz(lead + 24), t, STEP_T * 2.2, bgmPeak * 1.3);
-      // soft echo via the FX bus
-      pluckTri(midiToHz(lead + 24), t, STEP_T * 1.8, bgmPeak * 0.45, bgmFx);
+    // Taiko on beats 1 & 3
+    if (stepInBar === 0 || stepInBar === 8) {
+      taiko(t, bgmPeak * 3.5, stepInBar === 0 ? 95 : 80, bgmGain);
+    }
+    // Soft kick on beats 2 & 4
+    if (stepInBar === 4 || stepInBar === 12) {
+      taiko(t, bgmPeak * 1.6, 110, bgmGain);
     }
 
-    // ARP — square 16ths, slightly quieter so it's a bed not a feature
-    const arp = ARP[stepInPhrase];
-    if (arp >= 0) {
-      pluckSquare(midiToHz(arp + 24), t, STEP_T * 0.95, bgmPeak * 0.55);
+    const note = MELODY[stepInPhrase];
+    if (note >= 0) {
+      pluckMarimba(midiToHz(note + 24), t, STEP_T * 2.4, bgmPeak * 1.1);
+      pluckMarimba(midiToHz(note + 24), t, STEP_T * 1.8, bgmPeak * 0.35, bgmFx);
     }
 
-    // BASS — sine pulses per pattern
-    const b = BASS_PATTERN.find(b => b.step === stepInPhrase);
-    if (b) {
-      bassSine(midiToHz(b.smOffset), t, STEP_T * 3.6, bgmPeak * 1.1);
+    const bs = BASS_PATTERN.find(x => x.step === stepInPhrase);
+    if (bs) {
+      bassSine(midiToHz(bs.smOffset), t, STEP_T * 3.6, bgmPeak * 1.0);
     }
 
-    // BELL — high tinkle on beat 1 of every bar (steps 0/16/32/48) AND a
-    // softer tinkle on beat 3 of every other bar
-    if (stepInBar === 0) {
-      const noteSm = stepInPhrase === 0 ? 36 : 31; // D6 or A5
-      bellPing(midiToHz(noteSm), t, bgmPeak * 0.65);
-    } else if (stepInBar === 8 && (stepInPhrase === 8 || stepInPhrase === 40)) {
-      bellPing(midiToHz(33), t, bgmPeak * 0.45);
+    if (stepInBar % 2 === 1) {
+      chat(t, bgmPeak * 0.55, bgmFx);
     }
 
     bgmNextStepT += STEP_T;
@@ -298,13 +273,11 @@ export function startBgm(volume = 0.07) {
   bgmGain.connect(master);
   bgmGain.gain.linearRampToValueAtTime(volume, c.currentTime + 1.2);
 
-  // Small feedback delay bus — gives the lead a "rink reverb" tail without
-  // shipping any audio files. Subtle so the melody stays clear.
   bgmFx = c.createGain();
   const delay = c.createDelay(0.6);
-  delay.delayTime.value = 0.21;
+  delay.delayTime.value = 0.20;
   const fb = c.createGain();
-  fb.gain.value = 0.30;
+  fb.gain.value = 0.28;
   const wet = c.createGain();
   wet.gain.value = 0.55;
   bgmFx.connect(delay);

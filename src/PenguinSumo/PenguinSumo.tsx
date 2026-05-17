@@ -4,6 +4,7 @@ import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import { Scene } from './components/Scene';
 import { SplashScene } from './components/SplashScene';
 import { createGameState } from './hooks/useGameLoop';
+import type { SfxKey } from './hooks/useGameLoop';
 import { useJoystick } from './hooks/useJoystick';
 import { playSfx, startBgm, stopBgm, unlockAudio } from './utils/audio';
 import { t } from './i18n';
@@ -18,12 +19,12 @@ const HIGH_KEY = 'penguin_sumo_high';
 export function PenguinSumo() {
   const [phase, setPhase] = useState<Phase>('splash');
   const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [kos, setKos] = useState(0);
   const [highScore, setHighScore] = useState<number>(() => Number(localStorage.getItem(HIGH_KEY) || 0));
   const [finalScore, setFinalScore] = useState(0);
+  const [won, setWon] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  // Floating "-N" indicator for seal hits. `key` forces React to remount the
-  // node so the CSS animation replays even on consecutive hits.
-  const [chainBroken, setChainBroken] = useState<{ key: number; count: number } | null>(null);
 
   const stateRef = useRef(createGameState());
   const { stickRef, view } = useJoystick(phase === 'playing');
@@ -37,17 +38,15 @@ export function PenguinSumo() {
     navigator.vibrate(kind === 'heavy' ? 35 : 12);
   }, []);
 
-  const onScore = useCallback((s: number) => setScore(s), []);
+  const onScore = useCallback((s: number) => setScore(Math.floor(s)), []);
+  const onTime = useCallback((t: number) => setTimeLeft(Math.max(0, t)), []);
+  const onKo = useCallback((n: number) => setKos(n), []);
+  // ChargeRing reads charge straight from the game state ref, so no React state.
+  const onCharge = useCallback((_c: number) => { /* no-op — visual driven via useFrame */ }, []);
 
-  const onChainBroken = useCallback((lostCount: number) => {
-    const key = Date.now();
-    setChainBroken({ key, count: lostCount });
-    // Clear after the longest animation finishes so the DOM stays clean.
-    setTimeout(() => setChainBroken(cur => (cur && cur.key === key ? null : cur)), 1600);
-  }, []);
-
-  const onGameOver = useCallback((final: number) => {
+  const onGameOver = useCallback((final: number, didWin: boolean) => {
     setFinalScore(final);
+    setWon(didWin);
     setPhase('gameover');
     stopBgm();
     if (final > highScore) {
@@ -61,22 +60,20 @@ export function PenguinSumo() {
     await unlockAudio();
     stateRef.current = createGameState();
     setScore(0);
+    setKos(0);
+    setTimeLeft(60);
+    setWon(false);
     setPhase('playing');
-    startBgm(0.06);
+    startBgm(0.07);
   }, []);
 
-  // stop bgm on unmount
   useEffect(() => () => { stopBgm(); }, []);
 
-  // Preload safety: only mount the 3D Canvas once the user has started.
-  // While 'splash' is showing, this whole component sits at zero GPU cost.
-  // After game over the Canvas stays mounted so the frozen scene shows behind
-  // the overlay, but useFrame is gated on `playing` so the loop is idle.
   const showCanvas = phase !== 'splash';
   const canvasFrameloop = phase === 'playing' ? 'always' : 'demand';
 
   return (
-    <div className="pr">
+    <div className="ps">
       {showCanvas && (
         <div className="ps__canvas">
           <Canvas shadows dpr={[1, 2]} gl={{ antialias: true }} frameloop={canvasFrameloop}>
@@ -85,45 +82,41 @@ export function PenguinSumo() {
               playing={phase === 'playing'}
               stickRef={stickRef}
               onScore={onScore}
+              onTime={onTime}
+              onKo={onKo}
+              onCharge={onCharge}
               onGameOver={onGameOver}
-              onChainBroken={onChainBroken}
-              playSfx={playSfx}
+              playSfx={(k: SfxKey) => playSfx(k)}
               haptic={haptic}
             />
           </Canvas>
         </div>
       )}
 
-      {/* HUD — visible only when the 3D scene is up */}
       {showCanvas && (
         <div className="ps__hud">
-          <div className="ps__score">
-            <div className="ps__score-label">RESCUED</div>
-            <div className="ps__score-value">{String(score).padStart(2, '0')}</div>
-            {highScore > 0 && (
-              <div className="ps__hi">
-                <span>BEST</span>
-                <span className="ps__hi-value">{highScore}</span>
+          <div className="ps__topbar">
+            <div className="ps__topbar-cell">
+              <span className="ps__topbar-num">{String(score).padStart(3, '0')}</span>
+              <span className="ps__topbar-caption">SCORE</span>
+            </div>
+            <div className="ps__topbar-mid">
+              <div className="ps__ko-row">
+                {[0, 1, 2].map(i => (
+                  <span key={i} className={`ps__ko-dot ${i < kos ? 'ps__ko-dot--lit' : ''}`} />
+                ))}
               </div>
-            )}
+              <span className="ps__topbar-caption">KO / 3</span>
+            </div>
+            <div className="ps__topbar-cell ps__topbar-cell--right">
+              <span className="ps__topbar-num">{Math.ceil(timeLeft)}</span>
+              <span className="ps__topbar-caption">SEC</span>
+            </div>
           </div>
-          <img className="ps__watermark" src={alteruSvg} alt="AlterU" />
         </div>
       )}
+      {showCanvas && <img className="ps__watermark" src={alteruSvg} alt="AlterU" />}
 
-      {/* Seal-hit feedback: full-screen red flash + floating "-N" near the score */}
-      {chainBroken && (
-        <div className="ps__chain-break" key={chainBroken.key}>
-          <div className="ps__chain-break-flash" />
-          <div className="ps__chain-break-pellet">
-            <span className="ps__chain-break-minus">−</span>
-            <span className="ps__chain-break-count">{chainBroken.count}</span>
-          </div>
-          <div className="ps__chain-break-label">CHAIN BROKEN</div>
-        </div>
-      )}
-
-      {/* Joystick visual */}
       {view.active && (
         <div className="ps__joystick" style={{ left: view.ox, top: view.oy }}>
           <div className="ps__joystick__ring">
@@ -132,18 +125,18 @@ export function PenguinSumo() {
         </div>
       )}
 
-      {/* Splash — pure CSS/SVG, no 3D */}
       {phase === 'splash' && <SplashScene onStart={start} highScore={highScore} />}
 
-      {/* Game over */}
       {phase === 'gameover' && (
         <div className="ps__gameover">
           <div className="ps__gameover-eyebrow">
-            {finalScore > 0 && finalScore === highScore ? 'NEW RECORD' : 'CAUGHT BY THE SKUA'}
+            {finalScore > 0 && finalScore === highScore
+              ? 'NEW RECORD'
+              : (won ? 'YOKOZUNA!' : 'OUT OF THE RING')}
           </div>
           <div className="ps__final-score">{finalScore}</div>
           <div className="ps__final">
-            {finalScore === 1 ? '1 BABY RESCUED' : `${finalScore} BABIES RESCUED`}
+            {won ? `${kos} RIVAL${kos === 1 ? '' : 'S'} KO'D` : 'BETTER LUCK NEXT BOUT'}
           </div>
           <button className="ps__cta" onPointerDown={start}>
             {t('again')}
