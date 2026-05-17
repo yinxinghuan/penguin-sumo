@@ -63,12 +63,15 @@ function CameraRig({ state }: { state: React.MutableRefObject<GameRef> }) {
     const sz = (Math.random() - 0.5) * shakeMag * 0.7;
     const sy = (Math.random() - 0.5) * shakeMag * 0.4;
 
-    // STRONG follow — camera anchors to the player so the wrestler stays in
-    // the middle of the screen. Without this, when the player wanders to the
-    // edge of the arena they end up near the top/bottom of the viewport with
-    // no room to do a long slingshot drag away from the screen edge.
-    let fxC = player.position.x;
-    let fzC = player.position.z;
+    // 85% follow + 15% origin anchor — wrestler stays near screen center
+    // (so the user always has joystick room) but drifts slightly off-center
+    // when at the rink edge, preserving some "I'm near the boundary" cue.
+    // Pure 1.0× follow makes the world feel like it spins around you and
+    // you forget where the danger ring is; pure 0× lookAt-origin loses
+    // joystick space at the edges. 0.85 splits the difference.
+    const FOLLOW_RATIO = 0.85;
+    let fxC = player.position.x * FOLLOW_RATIO;
+    let fzC = player.position.z * FOLLOW_RATIO;
     // Look-ahead during charge — slide the camera anchor a bit further along
     // the aim direction so the dash target gets MORE screen real estate
     // while the player still has room to drag the slingshot backward.
@@ -96,16 +99,17 @@ function CameraRig({ state }: { state: React.MutableRefObject<GameRef> }) {
       CAMERA_POS[1] - kickY + sy,
       CAMERA_POS[2] + fzC - kickZ + sz,
     );
-    // Faster lerp during shake so the wobble actually shows up. The base
-    // follow lerp is a bit snappier than before (0.22 vs 0.18) so the camera
-    // doesn't trail noticeably behind quick player movement.
-    const lerpRate = shakeT.current > 0 ? 0.55 : 0.22;
+    // Base lerp 0.16 trails the player just enough to feel cinematic — when
+    // you burst, the camera catches up over ~3-4 frames instead of snapping,
+    // which kills the "everything's spinning around me" feeling. Shake-time
+    // lerp stays high so the wobble reads.
+    const lerpRate = shakeT.current > 0 ? 0.55 : 0.16;
     camera.position.lerp(desiredPos, lerpRate);
-    // Look-at point follows the player (+ a small look-ahead during charge)
+    // Look-at point uses the same 85/15 mix + look-ahead bias
     lookAtTarget.set(
-      player.position.x + lookAheadX,
+      player.position.x * FOLLOW_RATIO + lookAheadX,
       0,
-      player.position.z + lookAheadZ,
+      player.position.z * FOLLOW_RATIO + lookAheadZ,
     );
     camera.lookAt(lookAtTarget);
   });
