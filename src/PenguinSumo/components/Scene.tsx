@@ -249,13 +249,19 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
     const length = 1.4 + charge * 3.2;
     const midX = player.position.x + fx * length * 0.5;
     const midZ = player.position.z + fz * length * 0.5;
+    // Z-rotation: the plane's local +Y axis (its long edge) needs to map to
+    // the world forward direction (sin(R), 0, cos(R)) after the -PI/2 X tilt.
+    // Working it out: `rotation.z = player.rotation + PI` is the correct
+    // value. The earlier `-player.rotation` was off by 180° at R = 0 / PI
+    // (the visible bug was the tip drifting away from the shaft's far end).
+    const aimYaw = player.rotation + Math.PI;
     shaftRef.current.position.set(midX, 0.045, midZ);
-    shaftRef.current.rotation.set(-Math.PI / 2, 0, -player.rotation);
+    shaftRef.current.rotation.set(-Math.PI / 2, 0, aimYaw);
     shaftRef.current.scale.set(0.36 + charge * 0.10, length, 1);
     const tipX = player.position.x + fx * length;
     const tipZ = player.position.z + fz * length;
     tipRef.current.position.set(tipX, 0.05, tipZ);
-    tipRef.current.rotation.set(-Math.PI / 2, 0, -player.rotation);
+    tipRef.current.rotation.set(-Math.PI / 2, 0, aimYaw);
     const tipSize = 0.85 + charge * 0.45;
     tipRef.current.scale.set(tipSize, tipSize, 1);
     // Brightness builds with charge but the hue stays solidly red so the
@@ -345,19 +351,22 @@ function AiTelegraphs({ state }: { state: React.MutableRefObject<GameRef> }) {
       const fx = Math.sin(peng.rotation);
       const fz = Math.cos(peng.rotation);
       const length = 1.0 + peng.charge * 2.8;
+      // Same yaw math as the player's ChargeArrow — forward axis needs the
+      // +PI offset to align the plane's long edge with (sin(R), 0, cos(R)).
+      const aimYaw = peng.rotation + Math.PI;
       shaft.position.set(peng.position.x + fx * length * 0.5, 0.042, peng.position.z + fz * length * 0.5);
-      shaft.rotation.set(-Math.PI / 2, 0, -peng.rotation);
+      shaft.rotation.set(-Math.PI / 2, 0, aimYaw);
       shaft.scale.set(0.26 + peng.charge * 0.08, length, 1);
       tip.position.set(peng.position.x + fx * length, 0.046, peng.position.z + fz * length);
-      tip.rotation.set(-Math.PI / 2, 0, -peng.rotation);
+      tip.rotation.set(-Math.PI / 2, 0, aimYaw);
       const tipS = 0.55 + peng.charge * 0.35;
       tip.scale.set(tipS, tipS, 1);
       // Backward "stretch tail" — same length, opposite direction. Tapered
       // narrower than the forward shaft so it reads as the elastic, not as
-      // another arrow.
+      // another arrow. Backward yaw is `peng.rotation` (forward yaw - PI).
       const tailLen = 0.5 + peng.charge * 2.0;
       tail.position.set(peng.position.x - fx * tailLen * 0.5, 0.041, peng.position.z - fz * tailLen * 0.5);
-      tail.rotation.set(-Math.PI / 2, 0, -peng.rotation + Math.PI);
+      tail.rotation.set(-Math.PI / 2, 0, peng.rotation);
       tail.scale.set(0.14 + peng.charge * 0.06, tailLen, 1);
 
       const mat1 = shaft.material as THREE.MeshBasicMaterial;
