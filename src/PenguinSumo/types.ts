@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { WrestlerSpecies } from './constants';
 
 export type Phase = 'splash' | 'playing' | 'gameover';
 
@@ -35,6 +36,7 @@ export interface SumoPenguin {
   lastImpactFrom: string | null;  // id of the last penguin that hit us
   lastImpactAt: number;           // time of that hit (for KO_HISTORY_WINDOW)
   fellOutAt: number;              // time when state became 'falling'
+  species: WrestlerSpecies;       // visual class — drives which mesh renders
   bodyColor: string;              // distinguishing body color
   beltColor: string;              // mawashi belt color
 }

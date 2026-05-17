@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CAMERA_FOV, CAMERA_POS, ARENA_RADIUS, RING_OUT_RADIUS } from '../constants';
 import { Penguin } from './Penguin';
+import { SheepWrestler, WolfWrestler, SheepdogWrestler } from './Wrestlers';
 import { useGameLoop, GameRef, SfxKey } from '../hooks/useGameLoop';
 import type { Stick } from '../types';
 
@@ -100,21 +101,28 @@ function ActorSync({ state }: { state: React.MutableRefObject<GameRef> }) {
   const d = state.current;
   return (
     <>
-      {d.penguins.map(peng => (
-        <group
-          key={peng.id}
-          ref={el => {
-            if (el) refs.current.set(peng.id, el);
-            else refs.current.delete(peng.id);
-          }}
-        >
-          <Penguin
-            bodyColor={peng.bodyColor}
-            beltColor={peng.beltColor}
-            isPlayer={peng.isPlayer}
-          />
-        </group>
-      ))}
+      {d.penguins.map(peng => {
+        const Mesh =
+          peng.species === 'sheep'    ? SheepWrestler :
+          peng.species === 'wolf'     ? WolfWrestler :
+          peng.species === 'sheepdog' ? SheepdogWrestler :
+                                         Penguin;
+        return (
+          <group
+            key={peng.id}
+            ref={el => {
+              if (el) refs.current.set(peng.id, el);
+              else refs.current.delete(peng.id);
+            }}
+          >
+            <Mesh
+              bodyColor={peng.bodyColor}
+              beltColor={peng.beltColor}
+              isPlayer={peng.isPlayer}
+            />
+          </group>
+        );
+      })}
     </>
   );
 }

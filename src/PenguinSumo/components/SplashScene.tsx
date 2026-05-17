@@ -1,16 +1,16 @@
-// Pure SVG/CSS splash. No 3D Canvas → safe to mount during preload.
-// Minimal by design: just sky, drifting snow, and a row of iceberg silhouettes
-// in the foreground. The motion is provided by the falling snowflakes and a
-// slow parallax shift on the iceberg row.
+// All-star roster poster. Penguin (player), Sheep, Wolf, Sheepdog facing the
+// camera on a circular dohyō. No 3D Canvas — pure SVG so the splash is cheap
+// to mount during preload.
+
 import { useState } from 'react';
 import { t } from '../i18n';
 
 interface Snowflake {
   id: number;
-  x: number;        // 0..100 (%)
-  delay: number;    // s
-  duration: number; // s
-  size: number;     // px
+  x: number;
+  delay: number;
+  duration: number;
+  size: number;
 }
 
 export function SplashScene({ onStart, highScore }: { onStart: () => void; highScore: number }) {
@@ -46,58 +46,165 @@ export function SplashScene({ onStart, highScore }: { onStart: () => void; highS
         ))}
       </div>
 
-      {/* Ice plane sits below the icebergs so they appear to be resting on it */}
+      {/* Ice plane */}
       <div className="ps-splash__ice" />
 
-      {/* Iceberg silhouettes — back row drifts slowly, front row stationary.
-          Each iceberg sits on a dark wet-ice ellipse so its base reads as
-          attached to the snow surface rather than floating above it. */}
-      <div className="ps-splash__icebergs ps-splash__icebergs--back">
-        <svg viewBox="0 0 1200 220" preserveAspectRatio="none" width="200%" height="100%">
-          <ellipse cx="130"  cy="198" rx="95"  ry="6" fill="#1f3d5a" opacity=".55" />
-          <ellipse cx="290"  cy="198" rx="85"  ry="6" fill="#1f3d5a" opacity=".55" />
-          <ellipse cx="460"  cy="198" rx="100" ry="7" fill="#1f3d5a" opacity=".6"  />
-          <ellipse cx="620"  cy="198" rx="80"  ry="6" fill="#1f3d5a" opacity=".55" />
-          <ellipse cx="780"  cy="198" rx="100" ry="7" fill="#1f3d5a" opacity=".6"  />
-          <ellipse cx="950"  cy="198" rx="85"  ry="6" fill="#1f3d5a" opacity=".55" />
-          <ellipse cx="1100" cy="198" rx="90"  ry="6" fill="#1f3d5a" opacity=".6"  />
-          <polygon fill="#1f3d5a" points="40,200 130,80 220,200" />
-          <polygon fill="#1f3d5a" points="200,200 290,130 380,200" />
-          <polygon fill="#1f3d5a" points="360,200 460,60 560,200" />
-          <polygon fill="#1f3d5a" points="540,200 620,150 700,200" />
-          <polygon fill="#1f3d5a" points="680,200 780,100 880,200" />
-          <polygon fill="#1f3d5a" points="860,200 950,150 1040,200" />
-          <polygon fill="#1f3d5a" points="1020,200 1100,90 1180,200" />
-        </svg>
-      </div>
+      {/* Roster row — all four wrestlers in their mawashi, lined up on the dohyō.
+          Drawn from a top-three-quarter angle so the bellies + bellsts read well. */}
       <div className="ps-splash__icebergs ps-splash__icebergs--front">
-        <svg viewBox="0 0 800 210" preserveAspectRatio="none" width="100%" height="100%">
-          {/* wet bases — dark navy ellipses anchor each iceberg to the ice */}
-          <ellipse cx="60"  cy="200" rx="115" ry="8" fill="#1c3650" opacity=".85" />
-          <ellipse cx="220" cy="200" rx="115" ry="8" fill="#1c3650" opacity=".85" />
-          <ellipse cx="380" cy="200" rx="105" ry="8" fill="#1c3650" opacity=".85" />
-          <ellipse cx="530" cy="200" rx="115" ry="9" fill="#1c3650" opacity=".85" />
-          <ellipse cx="690" cy="200" rx="110" ry="8" fill="#1c3650" opacity=".85" />
-          <ellipse cx="830" cy="200" rx="95"  ry="8" fill="#1c3650" opacity=".85" />
-          {/* foreground steel-blue icebergs with bright snow peaks */}
-          <polygon fill="#6996b6" points="-30,200 60,90 150,200" />
-          <polygon fill="#f4fbff" points="20,140 60,90 100,140" />
-          <polygon fill="#6996b6" points="130,200 220,70 310,200" />
-          <polygon fill="#f4fbff" points="180,120 220,70 260,120" />
-          <polygon fill="#6996b6" points="290,200 380,110 460,200" />
-          <polygon fill="#f4fbff" points="345,150 380,110 415,150" />
-          <polygon fill="#6996b6" points="440,200 530,60 620,200" />
-          <polygon fill="#f4fbff" points="490,100 530,60 570,100" />
-          <polygon fill="#6996b6" points="600,200 690,100 780,200" />
-          <polygon fill="#f4fbff" points="650,140 690,100 730,140" />
-          <polygon fill="#6996b6" points="760,200 830,130 900,200" />
+        <svg viewBox="0 0 800 260" preserveAspectRatio="xMidYMax meet" width="100%" height="100%">
+          <defs>
+            <radialGradient id="ps-dohyo" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"  stopColor="#f4fbff" />
+              <stop offset="80%" stopColor="#bfd9ea" />
+              <stop offset="100%" stopColor="#7ea2b8" />
+            </radialGradient>
+          </defs>
+
+          {/* Dohyō — large ellipse at the bottom, big red border ring */}
+          <ellipse cx="400" cy="220" rx="380" ry="58" fill="#d8453e" />
+          <ellipse cx="400" cy="220" rx="362" ry="50" fill="url(#ps-dohyo)" />
+          {/* Hinomaru center sun mark */}
+          <circle cx="400" cy="220" r="14" fill="#d8453e" opacity="0.7" />
+
+          {/* === PENGUIN (player, red mawashi, gold crown) === */}
+          <g transform="translate(140,170)">
+            <ellipse cx="0" cy="40" rx="46" ry="6" fill="#1c3650" opacity=".55" />
+            {/* body */}
+            <ellipse cx="0" cy="-10" rx="40" ry="42" fill="#1d2330" />
+            {/* belly */}
+            <ellipse cx="0" cy="6" rx="28" ry="34" fill="#f4ecd8" />
+            {/* mawashi */}
+            <rect x="-42" y="14" width="84" height="14" fill="#d8453e" />
+            <rect x="-12" y="28" width="24" height="14" fill="#d8453e" />
+            {/* face */}
+            <ellipse cx="-10" cy="-25" r="4" fill="#0a0a0a" />
+            <ellipse cx="10"  cy="-25" r="4" fill="#0a0a0a" />
+            <circle cx="-9"  cy="-26" r="1.2" fill="#fff" />
+            <circle cx="11"  cy="-26" r="1.2" fill="#fff" />
+            <polygon points="-4,-15 4,-15 0,-7" fill="#f7b04a" />
+            {/* topknot */}
+            <circle cx="0" cy="-60" r="6" fill="#0a0a0e" />
+            <ellipse cx="0" cy="-68" rx="3" ry="6" fill="#0a0a0e" />
+            {/* gold halo crown */}
+            <ellipse cx="0" cy="-58" rx="14" ry="3" fill="none" stroke="#ffd84a" strokeWidth="2.5" />
+            {/* feet */}
+            <rect x="-16" y="40" width="14" height="6" fill="#f7b04a" />
+            <rect x="2"   y="40" width="14" height="6" fill="#f7b04a" />
+            <text x="0" y="78" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="11" fontWeight="700" fill="#0c1a28" letterSpacing="0.18em">YOU</text>
+          </g>
+
+          {/* === SHEEP (rookie, yellow mawashi) === */}
+          <g transform="translate(320,180)">
+            <ellipse cx="0" cy="34" rx="46" ry="6" fill="#1c3650" opacity=".55" />
+            {/* cloud-of-bumps wool body */}
+            <g fill="#f4ecd8">
+              <ellipse cx="-22" cy="-15" rx="16" ry="14" />
+              <ellipse cx="0"   cy="-22" rx="20" ry="16" />
+              <ellipse cx="22"  cy="-15" rx="16" ry="14" />
+              <ellipse cx="-12" cy="0"   rx="22" ry="16" />
+              <ellipse cx="14"  cy="0"   rx="22" ry="16" />
+            </g>
+            {/* head — dark sphere poking forward */}
+            <ellipse cx="0" cy="-12" rx="10" ry="11" fill="#2a1f1a" />
+            {/* eyes + cheek dots */}
+            <circle cx="-3" cy="-14" r="1.6" fill="#fff" />
+            <circle cx="3"  cy="-14" r="1.6" fill="#fff" />
+            {/* ears */}
+            <polygon points="-15,-15 -22,-8 -8,-8" fill="#2a1f1a" />
+            <polygon points="15,-15 22,-8 8,-8" fill="#2a1f1a" />
+            {/* mawashi */}
+            <rect x="-32" y="8" width="64" height="11" fill="#e8c54a" />
+            <rect x="-10" y="19" width="20" height="11" fill="#e8c54a" />
+            {/* topknot */}
+            <circle cx="0" cy="-40" r="5" fill="#0a0a0e" />
+            <ellipse cx="0" cy="-47" rx="2.5" ry="5" fill="#0a0a0e" />
+            {/* hooves */}
+            <rect x="-12" y="34" width="10" height="5" fill="#2a1f1a" />
+            <rect x="2"   y="34" width="10" height="5" fill="#2a1f1a" />
+            <text x="0" y="68" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="9" fontWeight="700" fill="#0c1a28" letterSpacing="0.18em">ROOKIE</text>
+          </g>
+
+          {/* === WOLF (bruiser, green mawashi) === */}
+          <g transform="translate(500,180)">
+            <ellipse cx="0" cy="34" rx="44" ry="6" fill="#1c3650" opacity=".55" />
+            {/* body — leaner */}
+            <ellipse cx="0" cy="-5" rx="32" ry="36" fill="#5a5650" />
+            {/* dark spine ridge */}
+            <ellipse cx="0" cy="-12" rx="10" ry="30" fill="#2e2a25" />
+            {/* belly band */}
+            <ellipse cx="0" cy="8"  rx="18" ry="14" fill="#7a7570" />
+            {/* head — boxy + long muzzle */}
+            <ellipse cx="0" cy="-22" rx="12" ry="11" fill="#5a5650" />
+            <ellipse cx="0" cy="-12" rx="6"  ry="6"  fill="#3a3631" />
+            {/* nose */}
+            <circle cx="0" cy="-8" r="2" fill="#0a0a0a" />
+            {/* glowing yellow eyes */}
+            <circle cx="-5" cy="-24" r="2" fill="#ffdc4a" />
+            <circle cx="5"  cy="-24" r="2" fill="#ffdc4a" />
+            {/* pointed ears */}
+            <polygon points="-9,-32 -13,-22 -4,-22" fill="#3e3a35" />
+            <polygon points="9,-32 13,-22 4,-22" fill="#3e3a35" />
+            {/* mawashi */}
+            <rect x="-30" y="14" width="60" height="11" fill="#22a04a" />
+            <rect x="-10" y="25" width="20" height="11" fill="#22a04a" />
+            {/* topknot */}
+            <circle cx="0" cy="-48" r="5" fill="#0a0a0e" />
+            <ellipse cx="0" cy="-55" rx="2.5" ry="5" fill="#0a0a0e" />
+            {/* paws */}
+            <rect x="-12" y="34" width="10" height="5" fill="#3a3631" />
+            <rect x="2"   y="34" width="10" height="5" fill="#3a3631" />
+            <text x="0" y="68" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="9" fontWeight="700" fill="#0c1a28" letterSpacing="0.18em">BRUISER</text>
+          </g>
+
+          {/* === SHEEPDOG (sniper, blue mawashi) === */}
+          <g transform="translate(670,180)">
+            <ellipse cx="0" cy="34" rx="44" ry="6" fill="#1c3650" opacity=".55" />
+            {/* body — black */}
+            <ellipse cx="0" cy="-5" rx="34" ry="36" fill="#161616" />
+            {/* white chest blaze */}
+            <ellipse cx="0" cy="5"  rx="20" ry="26" fill="#f4ecd8" />
+            {/* white back stripe */}
+            <ellipse cx="0" cy="-15" rx="6" ry="26" fill="#f4ecd8" />
+            {/* head — black */}
+            <ellipse cx="0" cy="-22" rx="13" ry="12" fill="#161616" />
+            {/* white muzzle */}
+            <ellipse cx="0" cy="-15" rx="7" ry="6" fill="#f4ecd8" />
+            <circle cx="0" cy="-11" r="1.8" fill="#0a0a0a" />
+            {/* eyes */}
+            <circle cx="-5" cy="-25" r="1.8" fill="#fff" />
+            <circle cx="5"  cy="-25" r="1.8" fill="#fff" />
+            <circle cx="-5" cy="-25" r="0.8" fill="#0a0a0a" />
+            <circle cx="5"  cy="-25" r="0.8" fill="#0a0a0a" />
+            {/* triangular ears pointing back */}
+            <polygon points="-9,-33 -14,-25 -4,-22" fill="#161616" />
+            <polygon points="9,-33 14,-25 4,-22" fill="#161616" />
+            {/* mawashi */}
+            <rect x="-30" y="14" width="60" height="11" fill="#5a8be0" />
+            <rect x="-10" y="25" width="20" height="11" fill="#5a8be0" />
+            {/* topknot */}
+            <circle cx="0" cy="-48" r="5" fill="#0a0a0e" />
+            <ellipse cx="0" cy="-55" rx="2.5" ry="5" fill="#0a0a0e" />
+            {/* white paws */}
+            <rect x="-12" y="34" width="10" height="5" fill="#f4ecd8" />
+            <rect x="2"   y="34" width="10" height="5" fill="#f4ecd8" />
+            <text x="0" y="68" textAnchor="middle" fontFamily="JetBrains Mono, monospace" fontSize="9" fontWeight="700" fill="#0c1a28" letterSpacing="0.18em">SNIPER</text>
+          </g>
+
+          {/* foreground sweat-drop / dust accents */}
+          <g fill="#cfe0f0" opacity="0.55">
+            <circle cx="240"  cy="200" r="1.4" />
+            <circle cx="420"  cy="195" r="1.6" />
+            <circle cx="580"  cy="200" r="1.4" />
+            <circle cx="730"  cy="195" r="1.4" />
+          </g>
         </svg>
       </div>
 
       {/* foreground content */}
       <div className="ps-splash__content">
         <h1 className="ps-splash__title">
-          <span className="ps-splash__title-emph">Penguin</span>
+          <span className="ps-splash__title-emph">All-Star</span>
           <span className="ps-splash__title-emph ps-splash__title-emph--accent">Sumo</span>
         </h1>
         <p className="ps-splash__subtitle">{t('subtitle')}</p>

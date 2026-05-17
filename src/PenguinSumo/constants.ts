@@ -33,9 +33,14 @@ export const KO_SCORE = 50;               // points per KO when player was last 
 export const SURVIVAL_PT_PER_SEC = 1;     // points per second alive
 export const ALL_DOWN_BONUS = 200;        // bonus when player KOs all 3 AI
 
-// AI personalities — Rookie / Bruiser / Sniper
+// Wrestler species — the player is always a penguin; AI cycle through the
+// AlterU 3D-series cast so each bout feels like an all-star brawl.
+export type WrestlerSpecies = 'penguin' | 'sheep' | 'wolf' | 'sheepdog';
+
+// AI personalities — Rookie / Bruiser / Sniper, each tied to a species.
 export interface AiSpec {
   id: string;
+  species: WrestlerSpecies;
   approachSpeed: number;        // baseline approach speed
   chargeTime: number;           // seconds to fill a full charge
   burstSpeed: number;           // burst velocity when released
@@ -49,36 +54,39 @@ export interface AiSpec {
 export const AI_SPECS: AiSpec[] = [
   {
     id: 'rookie',
+    species: 'sheep',           // peaceful, timid, easy to push
     approachSpeed: 4.5,
     chargeTime: 1.4,
     burstSpeed: 13,
     recoverTime: 1.3,
     triggerRange: 6.0,
     edgeAvoidance: 0.95,
-    bodyColor: '#2a3a30',
-    beltColor: '#e8c54a',  // yellow mawashi
+    bodyColor: '#f4ecd8',       // wool cream
+    beltColor: '#e8c54a',       // yellow mawashi
   },
   {
     id: 'bruiser',
+    species: 'wolf',            // aggressive predator
     approachSpeed: 6.0,
     chargeTime: 0.5,
     burstSpeed: 17,
     recoverTime: 0.7,
     triggerRange: 4.4,
-    edgeAvoidance: 0.40,   // dives into the fight, sometimes off the edge
-    bodyColor: '#3a2424',
-    beltColor: '#22a04a',  // green mawashi
+    edgeAvoidance: 0.40,
+    bodyColor: '#5a5650',       // grey wolf fur
+    beltColor: '#22a04a',       // green mawashi
   },
   {
     id: 'sniper',
+    species: 'sheepdog',        // patient, calculating
     approachSpeed: 5.0,
     chargeTime: 2.0,
     burstSpeed: 22,
     recoverTime: 1.8,
     triggerRange: 8.0,
     edgeAvoidance: 0.85,
-    bodyColor: '#33274a',
-    beltColor: '#5a8be0',  // blue mawashi
+    bodyColor: '#161616',       // border collie black
+    beltColor: '#5a8be0',       // blue mawashi
   },
 ];
 

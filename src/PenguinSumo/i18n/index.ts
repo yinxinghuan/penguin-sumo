@@ -9,7 +9,7 @@ function detectLocale(): Locale {
 const dict: Record<Locale, Record<string, string>> = {
   zh: {
     title: 'Penguin Sumo',
-    subtitle: '冰上擂台 · 把对手撞下水',
+    subtitle: 'AlterU 全明星冰上擂台',
     tap_to_start: '入场',
     again: '再来一回',
     score: '得分',
@@ -22,7 +22,7 @@ const dict: Record<Locale, Record<string, string>> = {
   },
   en: {
     title: 'Penguin Sumo',
-    subtitle: 'PUSH RIVALS OFF THE ICE',
+    subtitle: 'ALTERU ALL-STAR ICE BRAWL',
     tap_to_start: 'Step onto the ring',
     again: 'Rematch',
     score: 'Score',

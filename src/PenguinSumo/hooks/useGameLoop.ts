@@ -59,6 +59,7 @@ function spawnInitial(d: GameRef) {
     lastImpactFrom: null,
     lastImpactAt: -99,
     fellOutAt: -1,
+    species: 'penguin',
     bodyColor: '#1a1a1a',
     beltColor: '#d8453e', // red mawashi for the player — classic
   };
@@ -84,6 +85,7 @@ function spawnInitial(d: GameRef) {
       lastImpactFrom: null,
       lastImpactAt: -99,
       fellOutAt: -1,
+      species: spec.species,
       bodyColor: spec.bodyColor,
       beltColor: spec.beltColor,
     });
