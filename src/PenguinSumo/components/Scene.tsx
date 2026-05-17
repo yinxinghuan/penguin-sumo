@@ -234,6 +234,13 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
   const shaftMat = useRef<THREE.MeshBasicMaterial>(null);
   const tipMat = useRef<THREE.MeshBasicMaterial>(null);
   const tailMat = useRef<THREE.MeshBasicMaterial>(null);
+  // Color lerp scratch — warm-yellow (low charge) → orange → hot red (full).
+  // Power feedback visualized through the arrow's hue.
+  const lerpColor = useMemo(() => new THREE.Color(), []);
+  const tipColor = useMemo(() => new THREE.Color(), []);
+  const cWeak = useMemo(() => new THREE.Color('#ffc740'), []);
+  const cMid  = useMemo(() => new THREE.Color('#ff7a3a'), []);
+  const cHot  = useMemo(() => new THREE.Color('#ff2030'), []);
 
   useFrame(() => {
     const d = state.current;
@@ -268,8 +275,16 @@ function ChargeArrow({ state }: { state: React.MutableRefObject<GameRef> }) {
     tipRef.current.rotation.set(-Math.PI / 2, 0, aimYaw);
     const tipSize = 0.85 + charge * 0.45;
     tipRef.current.scale.set(tipSize, tipSize, 1);
-    // Brightness builds with charge but the hue stays solidly red so the
-    // arrow always reads as "dash this way."
+    // Power feedback hue — low charge is yellow-orange, full charge is hot
+    // red. The arrow telegraphs HOW HARD the dash will hit at a glance.
+    if (charge < 0.5) lerpColor.copy(cWeak).lerp(cMid, charge / 0.5);
+    else              lerpColor.copy(cMid).lerp(cHot, (charge - 0.5) / 0.5);
+    shaftMat.current.color.copy(lerpColor);
+    // Tip lerps a shade brighter than the shaft so it pops
+    tipColor.copy(lerpColor).lerp(new THREE.Color('#ffffff'), 0.18);
+    tipMat.current.color.copy(tipColor);
+    tailMat.current.color.copy(lerpColor);
+
     const baseOp = 0.7 + charge * 0.3;
     shaftMat.current.opacity = baseOp;
     tipMat.current.opacity = Math.min(1, baseOp + 0.15);
