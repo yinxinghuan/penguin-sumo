@@ -36,6 +36,8 @@ export interface SumoPenguin {
   lastImpactFrom: string | null;  // id of the last penguin that hit us
   lastImpactAt: number;           // time of that hit (for KO_HISTORY_WINDOW)
   fellOutAt: number;              // time when state became 'falling'
+  fallVy: number;                 // vertical velocity for the launch-then-drop arc
+  tumbleRoll: number;             // accumulated tumble-spin around the X axis
   species: WrestlerSpecies;       // visual class — drives which mesh renders
   bodyColor: string;              // distinguishing body color
   beltColor: string;              // mawashi belt color

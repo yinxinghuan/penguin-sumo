@@ -118,6 +118,15 @@ function ActorSync({ state }: { state: React.MutableRefObject<GameRef> }) {
       if (!g) continue;
       g.position.copy(peng.position);
       g.rotation.y = peng.rotation;
+      // Tumble while ringed-out — spin around the body's X axis (forward roll)
+      // and slight Z tilt so the wrestler reads as "knocked over."
+      if (peng.state === 'falling') {
+        g.rotation.x = peng.tumbleRoll;
+        g.rotation.z = Math.sin(peng.tumbleRoll * 0.6) * 0.4;
+      } else {
+        g.rotation.x = 0;
+        g.rotation.z = 0;
+      }
       g.userData.charge = peng.charge;
       g.userData.state = peng.state;
       g.visible = peng.state !== 'gone';
@@ -389,8 +398,10 @@ function AiTelegraphs({ state }: { state: React.MutableRefObject<GameRef> }) {
   );
 }
 
-// Impact bursts — expanding ring + flash sphere at each bonk / KO. Animation
-// is driven by FxEvent.born vs current game time so multiple bonks can stack.
+// Impact bursts — expanding ring + flash sphere at each bonk / KO / splash.
+// Animation is driven by FxEvent.born vs current game time so multiple bonks
+// can stack. 'splash' is the water-impact effect; bigger ring + droplet
+// specks that arc upward.
 function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
   const refs = useRef<Map<number, { ring: THREE.Mesh | null; ringMat: THREE.MeshBasicMaterial | null; flash: THREE.Mesh | null; flashMat: THREE.MeshBasicMaterial | null; }>>(new Map());
   const [, force] = useState(0);
@@ -401,7 +412,7 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
     // Detect new fx → trigger React render to mount new meshes
     let changed = false;
     for (const fx of d.fx) {
-      if (fx.type !== 'bonk' && fx.type !== 'ko') continue;
+      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash') continue;
       if (!lastSeen.current.has(fx.key)) {
         lastSeen.current.add(fx.key);
         changed = true;
@@ -419,14 +430,15 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
     if (changed) force(x => x + 1);
     // Animate live ones
     for (const fx of d.fx) {
-      if (fx.type !== 'bonk' && fx.type !== 'ko') continue;
+      if (fx.type !== 'bonk' && fx.type !== 'ko' && fx.type !== 'splash') continue;
       const r = refs.current.get(fx.key);
       if (!r) continue;
       const age = d.time - fx.born;
-      const dur = fx.type === 'ko' ? 1.0 : 0.45;
+      const dur = fx.type === 'splash' ? 1.4 : fx.type === 'ko' ? 1.0 : 0.45;
       const t = Math.min(1, age / dur);
       if (r.ring && r.ringMat) {
-        const s = 0.25 + t * (fx.type === 'ko' ? 3.5 : 2.4);
+        const maxScale = fx.type === 'splash' ? 4.5 : fx.type === 'ko' ? 3.5 : 2.4;
+        const s = 0.25 + t * maxScale;
         r.ring.scale.set(s, 1, s);
         r.ringMat.opacity = (1 - t) * 0.85;
       }
@@ -442,41 +454,48 @@ function ImpactBursts({ state }: { state: React.MutableRefObject<GameRef> }) {
   return (
     <>
       {d.fx
-        .filter(f => f.type === 'bonk' || f.type === 'ko')
+        .filter(f => f.type === 'bonk' || f.type === 'ko' || f.type === 'splash')
         .map(fx => {
           const ensure = (key: number) => {
             if (!refs.current.has(key)) refs.current.set(key, { ring: null, ringMat: null, flash: null, flashMat: null });
             return refs.current.get(key)!;
           };
-          // 6 radial spark lines for that comic-impact star burst look
-          const spokes = 6;
+          // Color & spoke count per fx type
+          const ringColor = fx.type === 'ko' ? '#38e6ff' : fx.type === 'splash' ? '#9fc8e8' : '#ffd84a';
+          const flashColor = fx.type === 'ko' ? '#cfe0f0' : fx.type === 'splash' ? '#cfe6f5' : '#fff5dd';
+          const spokes = fx.type === 'splash' ? 10 : 6;
+          // Y-position: bonk/ko slightly above floor, splash AT water level
+          const baseY = fx.type === 'splash' ? -0.08 : 0.07;
           return (
-            <group key={fx.key} position={[fx.x, 0.07, fx.z]}>
+            <group key={fx.key} position={[fx.x, baseY, fx.z]}>
               <mesh
                 rotation={[-Math.PI / 2, 0, 0]}
                 ref={el => { const r = ensure(fx.key); r.ring = el; r.ringMat = el ? (el.material as THREE.MeshBasicMaterial) : null; }}
               >
-                <ringGeometry args={[0.45, 0.78, 32]} />
-                <meshBasicMaterial color={fx.type === 'ko' ? '#38e6ff' : '#ffd84a'} transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} />
+                <ringGeometry args={[0.45, fx.type === 'splash' ? 0.92 : 0.78, 32]} />
+                <meshBasicMaterial color={ringColor} transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} />
               </mesh>
               <mesh
                 ref={el => { const r = ensure(fx.key); r.flash = el; r.flashMat = el ? (el.material as THREE.MeshBasicMaterial) : null; }}
               >
-                <sphereGeometry args={[0.65, 14, 10]} />
-                <meshBasicMaterial color={fx.type === 'ko' ? '#cfe0f0' : '#fff5dd'} transparent opacity={0.6} depthWrite={false} blending={THREE.AdditiveBlending} />
+                <sphereGeometry args={[fx.type === 'splash' ? 0.85 : 0.65, 14, 10]} />
+                <meshBasicMaterial color={flashColor} transparent opacity={0.6} depthWrite={false} blending={THREE.AdditiveBlending} />
               </mesh>
-              {/* radial spark spokes — a star-burst of 6 short thin planes */}
+              {/* radial spokes — for splash these read as droplets arcing
+                  outward from the impact point */}
               {Array.from({ length: spokes }).map((_, i) => {
                 const a = (i / spokes) * Math.PI * 2;
+                const stretch = fx.type === 'splash' ? 1.6 : 1.2;
+                const dist = fx.type === 'splash' ? 1.1 : 0.8;
                 return (
                   <mesh
                     key={i}
                     rotation={[-Math.PI / 2, 0, -a]}
-                    position={[Math.cos(a) * 0.8, 0, Math.sin(a) * 0.8]}
-                    scale={[0.10, 1.2, 1]}
+                    position={[Math.cos(a) * dist, 0, Math.sin(a) * dist]}
+                    scale={[fx.type === 'splash' ? 0.06 : 0.10, stretch, 1]}
                   >
                     <planeGeometry args={[1, 1]} />
-                    <meshBasicMaterial color={fx.type === 'ko' ? '#cfe0f0' : '#fff5dd'} transparent opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending} />
+                    <meshBasicMaterial color={flashColor} transparent opacity={0.85} depthWrite={false} blending={THREE.AdditiveBlending} />
                   </mesh>
                 );
               })}

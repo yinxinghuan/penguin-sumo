@@ -64,6 +64,8 @@ function spawnInitial(d: GameRef) {
     lastImpactFrom: null,
     lastImpactAt: -99,
     fellOutAt: -1,
+    fallVy: 0,
+    tumbleRoll: 0,
     species: 'penguin',
     bodyColor: '#1a1a1a',
     beltColor: '#d8453e', // red mawashi for the player — classic
@@ -90,6 +92,8 @@ function spawnInitial(d: GameRef) {
       lastImpactFrom: null,
       lastImpactAt: -99,
       fellOutAt: -1,
+      fallVy: 0,
+      tumbleRoll: 0,
       species: spec.species,
       bodyColor: spec.bodyColor,
       beltColor: spec.beltColor,
@@ -300,11 +304,24 @@ export function useGameLoop(p: GameLoopParams) {
     // -----------------------------------------------------------------------
     for (const peng of d.penguins) {
       if (peng.state === 'falling') {
-        // Drop animation — position keeps drifting outward + y falls
+        // Launch-then-drop arc: penguin pops up from the rink, then gravity
+        // pulls it down into the water. Outward velocity keeps drifting them
+        // off the edge so the arc trails away from the dohyō rather than
+        // dropping straight down.
         peng.position.x += peng.velocity.x * c;
         peng.position.z += peng.velocity.z * c;
-        peng.position.y -= 4 * c + Math.max(0, (d.time - peng.fellOutAt) * 1.6);
-        if (peng.position.y < -3) {
+        peng.fallVy -= 24 * c; // strong gravity
+        peng.position.y += peng.fallVy * c;
+        // Tumble — rotate around an axis perpendicular to the outward drift.
+        // Fast spin sells the "knocked clean off" cartoon feel.
+        peng.tumbleRoll += c * 12;
+        // When they punch through the water surface (y ≈ -0.3) we emit a
+        // big splash burst exactly once.
+        if (peng.position.y < -0.2 && (peng as any).splashed !== true) {
+          (peng as any).splashed = true;
+          emitFx(d, 'splash', peng.position.x, peng.position.z);
+        }
+        if (peng.position.y < -4.5) {
           peng.state = 'gone';
         }
         continue;
@@ -406,7 +423,16 @@ export function useGameLoop(p: GameLoopParams) {
         if (r > RING_OUT_RADIUS) {
           peng.state = 'falling';
           peng.fellOutAt = d.time;
-          emitFx(d, 'splash', peng.position.x, peng.position.z);
+          // Launch impulse — penguin pops up and outward dramatically. The
+          // existing horizontal velocity stays; we just add the vertical kick
+          // + a small outward boost so they get clear of the rink.
+          peng.fallVy = 4.5 + Math.min(2.5, Math.hypot(peng.velocity.x, peng.velocity.z) * 0.18);
+          const outScale = 1.35;
+          peng.velocity.x *= outScale;
+          peng.velocity.z *= outScale;
+          // Initial dust burst at the launch point (on the rink edge) AND a
+          // big KO ring overlay there so the moment reads as explosive.
+          emitFx(d, 'ko', peng.position.x, peng.position.z);
           p.playSfx('ko');
           // KO is always a big-hit moment — hit-stop + impact ping
           d.timeScale = 0.22;
