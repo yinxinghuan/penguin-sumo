@@ -63,18 +63,25 @@ function CameraRig({ state }: { state: React.MutableRefObject<GameRef> }) {
     const sz = (Math.random() - 0.5) * shakeMag * 0.7;
     const sy = (Math.random() - 0.5) * shakeMag * 0.4;
 
-    // Subtle follow — bias camera 15% toward player
-    let fxC = player.position.x * 0.15;
-    let fzC = player.position.z * 0.15;
-    // Look-ahead — while charging, push the camera in the AIM direction by
-    // charge × constant so the player can see more of what's ahead. Reverses
-    // the slingshot feel: finger pulls back → camera pushes forward.
+    // STRONG follow — camera anchors to the player so the wrestler stays in
+    // the middle of the screen. Without this, when the player wanders to the
+    // edge of the arena they end up near the top/bottom of the viewport with
+    // no room to do a long slingshot drag away from the screen edge.
+    let fxC = player.position.x;
+    let fzC = player.position.z;
+    // Look-ahead during charge — slide the camera anchor a bit further along
+    // the aim direction so the dash target gets MORE screen real estate
+    // while the player still has room to drag the slingshot backward.
+    let lookAheadX = 0;
+    let lookAheadZ = 0;
     if (player.state === 'charging' && player.charge > 0) {
       const aimX = Math.sin(player.rotation);
       const aimZ = Math.cos(player.rotation);
-      const push = player.charge * 2.6;
+      const push = player.charge * 2.4;
       fxC += aimX * push;
       fzC += aimZ * push;
+      lookAheadX = aimX * player.charge * 1.6;
+      lookAheadZ = aimZ * player.charge * 1.6;
     }
     // Burst kick — pull camera in (lower y, closer z) while player is bursting
     let kickY = 0, kickZ = 0;
@@ -89,19 +96,17 @@ function CameraRig({ state }: { state: React.MutableRefObject<GameRef> }) {
       CAMERA_POS[1] - kickY + sy,
       CAMERA_POS[2] + fzC - kickZ + sz,
     );
-    // Faster lerp during shake so the wobble actually shows up
-    const lerpRate = shakeT.current > 0 ? 0.55 : 0.18;
+    // Faster lerp during shake so the wobble actually shows up. The base
+    // follow lerp is a bit snappier than before (0.22 vs 0.18) so the camera
+    // doesn't trail noticeably behind quick player movement.
+    const lerpRate = shakeT.current > 0 ? 0.55 : 0.22;
     camera.position.lerp(desiredPos, lerpRate);
-    // Look-at also biases forward so the player isn't always perfectly centered
-    let laX = player.position.x * 0.35;
-    let laZ = player.position.z * 0.35;
-    if (player.state === 'charging' && player.charge > 0) {
-      const aimX = Math.sin(player.rotation);
-      const aimZ = Math.cos(player.rotation);
-      laX += aimX * player.charge * 2.0;
-      laZ += aimZ * player.charge * 2.0;
-    }
-    lookAtTarget.set(laX, 0, laZ);
+    // Look-at point follows the player (+ a small look-ahead during charge)
+    lookAtTarget.set(
+      player.position.x + lookAheadX,
+      0,
+      player.position.z + lookAheadZ,
+    );
     camera.lookAt(lookAtTarget);
   });
   return null;
