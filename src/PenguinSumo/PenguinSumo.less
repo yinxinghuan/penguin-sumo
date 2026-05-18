@@ -251,21 +251,29 @@
     -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
             mask-image: linear-gradient(180deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
   }
-  // Tutorial hand — standard "tap and drag" finger glyph. White hand with an
-  // extended index finger and a pulsing yellow ripple at the fingertip.
-  // The SVG is sized so its fingertip sits at the wrapper's top-center, which
-  // is the anchor the animation translates downward along the dashed trail.
+  // Tutorial finger — Google Material `touch_app` glyph (same one Murmuration
+  // uses). Dark fill + multiple white-glow drop-shadows so the icon reads
+  // against the icy arena. The wrapper is offset so the fingertip aligns to
+  // the dashed track origin, and translates downward along it.
   &__draghint-finger {
     position: absolute;
     left: 50%;
     top: 0;
-    width: 50px;
-    height: 86px;
-    margin-left: -25px;
-    margin-top: -6px; // align fingertip (SVG y=6) to track origin
-    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .4));
+    width: 56px;
+    height: 56px;
+    margin-left: -28px; // fingertip's x ≈ 28 inside the 56px container
+    margin-top: -17px;  // fingertip's y ≈ 17 inside the 56px container
     animation: ps-draghint 2.0s cubic-bezier(.4, 0, .55, 1) infinite;
-    > svg { display: block; width: 100%; height: 100%; }
+    > svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      fill: rgba(30, 32, 44, 0.92);
+      filter:
+        drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
+        drop-shadow(0 0 1px rgba(255, 255, 255, 0.95))
+        drop-shadow(0 2px 3px rgba(0, 0, 0, 0.30));
+    }
   }
 
   // Brief screen flash overlay — sells the hit

@@ -190,41 +190,11 @@ export function PenguinSumo() {
           <div className="ps__draghint-track">
             <div className="ps__draghint-trail" />
             <div className="ps__draghint-finger">
-              <svg viewBox="0 0 50 86" width="100%" height="100%" aria-hidden>
-                {/* hand body — thumb, palm/fist, and extended index finger */}
-                <g
-                  fill="#ffffff"
-                  stroke="rgba(20, 30, 50, 0.78)"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                >
-                  {/* ground shadow */}
-                  <ellipse cx="25" cy="84" rx="18" ry="2.4" fill="rgba(0, 0, 0, 0.32)" stroke="none" />
-                  {/* thumb (tilted) */}
-                  <ellipse cx="6" cy="40" rx="6" ry="10" transform="rotate(-22 6 40)" />
-                  {/* palm / closed fist */}
-                  <rect x="5" y="34" width="40" height="42" rx="17" />
-                  {/* curled-finger knuckle bumps along the right side */}
-                  <circle cx="42" cy="42" r="4" />
-                  <circle cx="44" cy="52" r="4" />
-                  <circle cx="44" cy="62" r="4" />
-                  {/* extended index finger */}
-                  <rect x="18" y="6" width="14" height="44" rx="7" />
-                  {/* knuckle crease where the finger meets the palm */}
-                  <line x1="21" y1="36" x2="29" y2="36"
-                        stroke="rgba(20, 30, 50, 0.32)" strokeWidth="1.6" />
-                </g>
-                {/* fingertip touch dot */}
-                <circle cx="25" cy="6" r="3.6" fill="#ffd84a" />
-                {/* expanding ripple ring at the fingertip — "press here" */}
-                <circle cx="25" cy="6" r="5" fill="none"
-                        stroke="#ffd84a" strokeWidth="2">
-                  <animate attributeName="r"
-                           values="5;14;5" dur="1.4s" repeatCount="indefinite" />
-                  <animate attributeName="opacity"
-                           values="0.9;0;0.9" dur="1.4s" repeatCount="indefinite" />
-                </circle>
+              {/* Google Material `touch_app` icon — same glyph Murmuration uses
+                  as its drag-hint pointer. Dark fill + white glow makes it read
+                  on any arena background. */}
+              <svg viewBox="0 0 24 24" aria-hidden>
+                <path d="M9 11.24V7.5C9 6.12 10.12 5 11.5 5S14 6.12 14 7.5v3.74c1.21-.81 2-2.18 2-3.74C16 5.01 13.99 3 11.5 3S7 5.01 7 7.5c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26c-.17-.07-.35-.11-.54-.11H13v-6c0-.83-.67-1.5-1.5-1.5S10 6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 0-.62-.38-1.16-.92-1.38z"/>
               </svg>
             </div>
           </div>
