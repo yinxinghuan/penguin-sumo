@@ -41,6 +41,10 @@ export function PenguinSumo() {
   // useJoystick still drives pointer→stick state; the visual joystick UI is
   // intentionally absent.
   const { stickRef } = useJoystick(phase === 'playing');
+  // The drag-back hint hides the first time the user actually pulls back far
+  // enough to start charging (charge > 0). A stray tap shouldn't dismiss it.
+  // Reset on each new round.
+  const [hasDragged, setHasDragged] = useState(false);
 
   const {
     isInAigram, submitScore, fetchGlobalLeaderboard, fetchFriendsLeaderboard,
@@ -54,9 +58,12 @@ export function PenguinSumo() {
   const onScore = useCallback((s: number) => setScore(Math.floor(s)), []);
   const onTime = useCallback((t: number) => setTimeLeft(Math.max(0, t)), []);
   const onKo = useCallback((n: number) => setKos(n), []);
-  // ChargeArrow reads charge straight from the game-state ref each frame —
-  // no React state needed for HUD purposes.
-  const onCharge = useCallback((_c: number) => { /* no-op */ }, []);
+  // ChargeArrow reads charge straight from the game-state ref each frame, so
+  // the only React state we care about is "has the user ever charged?" — once
+  // they have, the drag-back tutorial overlay can disappear.
+  const onCharge = useCallback((c: number) => {
+    if (c > 0) setHasDragged(true);
+  }, []);
   // PlayerScreenTracker is gone (no SVG line anchor needed); accept the
   // callback signature anyway in case any consumer still calls it.
   const onPlayerScreen = useCallback((_x: number, _y: number) => { /* no-op */ }, []);
@@ -97,6 +104,7 @@ export function PenguinSumo() {
     setTimeLeft(60);
     setWon(false);
     setPhase('playing');
+    setHasDragged(false);
     startBgm(0.07);
     // Round-start ritual: 1s "READY" lock, then a 0.4s "GO!" flash.
     introTimers.current.forEach(id => clearTimeout(id));
@@ -172,6 +180,17 @@ export function PenguinSumo() {
       {showCanvas && intro && (
         <div key={intro} className={`ps__intro ps__intro--${intro}`}>
           {intro === 'ready' ? 'READY' : 'GO!'}
+        </div>
+      )}
+
+      {/* Drag-back hint — looping finger animation that disappears the moment
+          the user actually presses + drags. Hidden during the READY lock. */}
+      {showCanvas && phase === 'playing' && intro !== 'ready' && !hasDragged && (
+        <div className="ps__draghint" aria-label={t('howto_drag')}>
+          <div className="ps__draghint-track">
+            <div className="ps__draghint-trail" />
+            <div className="ps__draghint-finger" />
+          </div>
         </div>
       )}
 

@@ -209,51 +209,6 @@ export function SplashScene({ onStart, highScore }: { onStart: () => void; highS
         </h1>
         <p className="ps-splash__subtitle">{t('subtitle')}</p>
 
-        {/* How-to gesture diagram — drag-back slingshot, finger on left, dash on right. */}
-        <div className="ps-splash__howto" aria-label="Drag back, release to dash">
-          <svg viewBox="0 0 280 84" width="100%" height="84" aria-hidden>
-            {/* drag-back dashed arrow (left half) */}
-            <line x1="104" y1="40" x2="50" y2="40"
-                  stroke="#ffd84a" strokeWidth="3" strokeLinecap="round" strokeDasharray="4 5">
-              <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1.2s" repeatCount="indefinite" />
-            </line>
-            <polyline points="60,30 50,40 60,50"
-                      fill="none" stroke="#ffd84a" strokeWidth="3"
-                      strokeLinecap="round" strokeLinejoin="round" />
-            {/* finger touch indicator */}
-            <circle cx="30" cy="40" r="13" fill="none" stroke="#ffd84a" strokeWidth="2" opacity="0.5">
-              <animate attributeName="r" values="13;16;13" dur="1.4s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.5;0.15;0.5" dur="1.4s" repeatCount="indefinite" />
-            </circle>
-            <circle cx="30" cy="40" r="7" fill="#ffd84a" />
-
-            {/* mini penguin in the middle */}
-            <g>
-              <ellipse cx="140" cy="40" rx="20" ry="22" fill="#1a1a1a" />
-              <ellipse cx="140" cy="44" rx="12" ry="15" fill="#f4ecd8" />
-              <rect x="120" y="48" width="40" height="6" rx="1" fill="#d8453e" />
-              <circle cx="135" cy="32" r="2" fill="#0a0a0a" />
-              <circle cx="145" cy="32" r="2" fill="#0a0a0a" />
-              <polygon points="138,36 142,36 140,40" fill="#f7b04a" />
-            </g>
-
-            {/* forward dash arrow (right half) */}
-            <line x1="178" y1="40" x2="252" y2="40"
-                  stroke="#ff6b3a" strokeWidth="4.5" strokeLinecap="round" />
-            <polyline points="240,30 252,40 240,50"
-                      fill="none" stroke="#ff6b3a" strokeWidth="4.5"
-                      strokeLinecap="round" strokeLinejoin="round" />
-
-            {/* labels */}
-            <text x="30" y="76" textAnchor="middle"
-                  fontFamily="JetBrains Mono, monospace" fontSize="9"
-                  fontWeight="700" fill="#cfe0f0" letterSpacing="0.18em">{t('howto_drag')}</text>
-            <text x="222" y="76" textAnchor="middle"
-                  fontFamily="JetBrains Mono, monospace" fontSize="9"
-                  fontWeight="700" fill="#ff6b3a" letterSpacing="0.18em">{t('howto_dash')}</text>
-          </svg>
-        </div>
-
         {highScore > 0 && (
           <div className="ps-splash__best">
             <span className="ps-splash__best-label">BEST</span>
