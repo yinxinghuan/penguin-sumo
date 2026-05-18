@@ -19,6 +19,8 @@ const dict: Record<Locale, Record<string, string>> = {
     rule_charge: '向后拉蓄力（弹弓式）→ 松手向前弹',
     rule_push:   '撞掉 3 个对手，或撑到时间结束',
     rule_avoid:  '别冲出冰圈',
+    howto_drag:  '向后拉',
+    howto_dash:  '弹射',
   },
   en: {
     title: 'Penguin Sumo',
@@ -32,6 +34,8 @@ const dict: Record<Locale, Record<string, string>> = {
     rule_charge: 'Pull back like a slingshot · release to dash forward',
     rule_push:   'KO all 3 rivals — or survive the bout',
     rule_avoid:  "Don't dash off the rink",
+    howto_drag:  'DRAG BACK',
+    howto_dash:  'DASH',
   },
 };
 
