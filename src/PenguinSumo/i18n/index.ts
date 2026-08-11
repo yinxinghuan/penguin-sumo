@@ -1,7 +1,7 @@
 type Locale = 'zh' | 'en';
 
 function detectLocale(): Locale {
-  const override = localStorage.getItem('game_locale');
+  const override = alteruLocalStorage.getItem('game_locale');
   if (override === 'en' || override === 'zh') return override;
   return 'en';
 }
@@ -43,7 +43,7 @@ let cur: Locale = detectLocale();
 
 export function setLocale(l: Locale) {
   cur = l;
-  localStorage.setItem('game_locale', l);
+  alteruLocalStorage.setItem('game_locale', l);
 }
 
 export function t(key: string, vars?: { n?: number | string }): string {

@@ -21,7 +21,7 @@ export function PenguinSumo() {
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60);
   const [kos, setKos] = useState(0);
-  const [highScore, setHighScore] = useState<number>(() => Number(localStorage.getItem(HIGH_KEY) || 0));
+  const [highScore, setHighScore] = useState<number>(() => Number(alteruLocalStorage.getItem(HIGH_KEY) || 0));
   const [finalScore, setFinalScore] = useState(0);
   const [won, setWon] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -90,7 +90,7 @@ export function PenguinSumo() {
     setPhase('gameover');
     stopBgm();
     if (final > highScore) {
-      localStorage.setItem(HIGH_KEY, String(final));
+      alteruLocalStorage.setItem(HIGH_KEY, String(final));
       setHighScore(final);
     }
     submitScore(final).catch(() => { /* silent */ });
